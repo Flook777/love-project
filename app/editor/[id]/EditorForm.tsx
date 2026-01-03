@@ -1,11 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import UploadButton from '@/components/UploadButton' // เรียกปุ่มที่เราเพิ่งสร้าง
+import UploadButton from '@/components/UploadButton'
 
-// รับข้อมูล Project และ ID ของธีมมา
 export default function EditorForm({ project, updateProjectAction }: { project: any, updateProjectAction: any }) {
-  // State สำหรับเก็บ URL รูปภาพ (เพื่อให้มันเปลี่ยนทันทีที่อัปโหลดเสร็จ)
+  // State สำหรับเก็บค่าต่างๆ เพื่อทำ Live Preview
   const [imageUrl, setImageUrl] = useState(project.customData?.imageUrl || "")
   const [title, setTitle] = useState(project.customData?.title || "")
   const [message, setMessage] = useState(project.customData?.message || "")
@@ -29,15 +28,13 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">รูปภาพหลัก</label>
             <UploadButton onUploadSuccess={(result: any) => {
-                // เมื่ออัปโหลดเสร็จ ให้เซ็ต URL ลงใน State ทันที
                 const secureUrl = result?.info?.secure_url;
                 if (secureUrl) setImageUrl(secureUrl);
             }} />
             
-            {/* Input ซ่อนไว้ (หรือโชว์ก็ได้) เพื่อส่งค่า URL ไป Server Action */}
             <input 
               name="imageUrl" 
-              value={imageUrl} // ผูกค่ากับ State
+              value={imageUrl} 
               readOnly
               className="w-full px-3 py-2 border rounded-md text-xs text-gray-500 bg-gray-100"
               placeholder="URL รูปภาพจะปรากฏอัตโนมัติ"
@@ -71,10 +68,24 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
           <button type="submit" className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 rounded-lg shadow-lg">
             💾 บันทึกข้อมูล
           </button>
+
+          {/* Link ไปหน้า Public View (แก้ไขให้ถูกต้องแล้ว) */}
+          <div className="pt-4 border-t">
+            <a 
+              href={`/p/${project.slug}`} 
+              target="_blank" 
+              className="block text-center w-full border border-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-50"
+            >
+              👁️ ดูตัวอย่างเว็บจริง
+            </a>
+            <a href="/dashboard" className="block text-center mt-2 text-sm text-gray-400 hover:text-gray-600">
+              &larr; กลับไปแดชบอร์ด
+            </a>
+          </div>
         </form>
       </aside>
 
-      {/* --- ส่วนที่ 2: Live Preview (Client Side เพื่อให้เห็นการเปลี่ยนแปลงทันที) --- */}
+      {/* --- ส่วนที่ 2: Live Preview --- */}
       <main className="flex-1 flex items-center justify-center p-8 bg-gray-100">
         <div className="w-[375px] h-[667px] bg-white rounded-3xl shadow-2xl overflow-hidden border-8 border-gray-800 relative">
           <div className="absolute top-0 w-full h-6 bg-gray-800 flex justify-center z-20"><div className="w-20 h-4 bg-black rounded-b-xl"></div></div>
