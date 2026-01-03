@@ -2,18 +2,10 @@ import NextAuth from "next-auth"
 import Line from "next-auth/providers/line"
 import Google from "next-auth/providers/google"
 import { PrismaAdapter } from "@auth/prisma-adapter"
-import { PrismaClient } from "@prisma/client"
-
-// --- ส่วนจัดการ Database Connection (ป้องกัน Error: Too many connections) ---
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
-
-const prisma = globalForPrisma.prisma || new PrismaClient()
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
-// ---------------------------------------------------------------------
+import { prisma } from "@/lib/prisma" // <--- เปลี่ยนมา Import จากไฟล์กลางที่เราสร้างไว้ใน lib
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  adapter: PrismaAdapter(prisma), // ส่งตัวแปร prisma ที่ import มาเข้าไป
   providers: [
     Line({
       clientId: process.env.LINE_CLIENT_ID,
