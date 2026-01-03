@@ -4,6 +4,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
 
+// --- 1. ฟังก์ชันสร้างโปรเจกต์ใหม่ (เดิม) ---
 export async function createProject(formData: FormData) {
   // 1. เช็คว่า Login หรือยัง
   const session = await auth()
@@ -30,6 +31,39 @@ export async function createProject(formData: FormData) {
     },
   })
 
-  // 5. สร้างเสร็จแล้ว ดีดไปหน้า Editor (เดี๋ยวเราค่อยสร้างหน้านี้)
+  // 5. สร้างเสร็จแล้ว ดีดไปหน้า Editor
   redirect(`/editor/${newProject.id}`)
+}
+
+// --- 2. ฟังก์ชันอัปเดตข้อมูลและรูปภาพ (เพิ่มใหม่) ---
+export async function updateProject(formData: FormData) {
+  const session = await auth()
+  // ต้อง Login และมี ID ถึงจะแก้ได้
+  if (!session?.user?.id) throw new Error("Unauthorized")
+
+  const projectId = formData.get("projectId") as string
+  const title = formData.get("title") as string
+  const message = formData.get("message") as string
+  const imageUrl = formData.get("imageUrl") as string // รับ URL รูปภาพที่อัปโหลดแล้ว
+
+  // เตรียมข้อมูล JSON ที่จะเก็บ (รวมรูปภาพด้วย)
+  const customData = {
+    title,
+    message,
+    imageUrl
+  }
+
+  // อัปเดตลง Database
+  await prisma.project.update({
+    where: { 
+      id: projectId, 
+      userId: session.user.id // Security: ต้องเป็นเจ้าของเท่านั้นถึงแก้ได้
+    }, 
+    data: {
+      customData: customData, // อัปเดต JSON ก้อนใหม่เข้าไป
+    },
+  })
+  
+  // รีเฟรชหน้าเว็บเพื่อให้เห็นข้อมูลใหม่
+  redirect(`/editor/${projectId}`)
 }
