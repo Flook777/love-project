@@ -1,18 +1,28 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react' // <--- เพิ่ม useTransition
 import UploadButton from '@/components/UploadButton'
 
 export default function EditorForm({ project, updateProjectAction }: { project: any, updateProjectAction: any }) {
-  // State สำหรับเก็บค่าต่างๆ เพื่อทำ Live Preview
   const [imageUrl, setImageUrl] = useState(project.customData?.imageUrl || "")
   const [title, setTitle] = useState(project.customData?.title || "")
   const [message, setMessage] = useState(project.customData?.message || "")
+  
+  // สร้าง state สำหรับเช็คสถานะการ loading
+  const [isPending, startTransition] = useTransition()
+
+  // ฟังก์ชันจัดการตอนกดปุ่ม Save
+  const handleSubmit = (formData: FormData) => {
+    startTransition(async () => {
+      await updateProjectAction(formData) // เรียก Server Action
+      alert("✅ บันทึกข้อมูลเรียบร้อยแล้วครับ!") // เด้งเตือนเมื่อเสร็จ
+    })
+  }
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       
-      {/* --- ส่วนที่ 1: Form แก้ไข (Client Side) --- */}
+      {/* --- ส่วนที่ 1: Form แก้ไข --- */}
       <aside className="w-full md:w-1/3 bg-white border-r border-gray-200 p-6 overflow-y-auto h-screen shadow-lg z-10">
         <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
           ✏️ แก้ไขข้อมูล
@@ -21,10 +31,10 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
           </span>
         </h2>
 
-        <form action={updateProjectAction} className="space-y-6">
+        {/* เปลี่ยน action เป็น handleSubmit ที่เราสร้างเอง */}
+        <form action={handleSubmit} className="space-y-6">
           <input type="hidden" name="projectId" value={project.id} />
 
-          {/* ปุ่มอัปโหลด */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">รูปภาพหลัก</label>
             <UploadButton onUploadSuccess={(result: any) => {
@@ -41,7 +51,6 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
             />
           </div>
 
-          {/* Title */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">หัวข้อ</label>
             <input
@@ -53,7 +62,6 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
             />
           </div>
 
-          {/* Message */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">ข้อความ</label>
             <textarea
@@ -65,11 +73,23 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
             />
           </div>
 
-          <button type="submit" className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 rounded-lg shadow-lg">
-            💾 บันทึกข้อมูล
+          {/* ปุ่มกดจะเปลี่ยนข้อความตามสถานะ isPending */}
+          <button 
+            type="submit" 
+            disabled={isPending}
+            className={`w-full font-bold py-3 rounded-lg shadow-lg transition flex justify-center items-center gap-2
+              ${isPending ? 'bg-gray-400 cursor-not-allowed' : 'bg-pink-500 hover:bg-pink-600 text-white'}
+            `}
+          >
+            {isPending ? (
+              <>
+                <span className="animate-spin">⏳</span> กำลังบันทึก...
+              </>
+            ) : (
+              '💾 บันทึกข้อมูล'
+            )}
           </button>
 
-          {/* Link ไปหน้า Public View (แก้ไขให้ถูกต้องแล้ว) */}
           <div className="pt-4 border-t">
             <a 
               href={`/p/${project.slug}`} 

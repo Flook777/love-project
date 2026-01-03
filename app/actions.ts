@@ -3,8 +3,9 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
+import { revalidatePath } from "next/cache" // <--- เพิ่มตัวนี้มาใหม่
 
-// --- 1. ฟังก์ชันสร้างโปรเจกต์ใหม่ ---
+// --- 1. ฟังก์ชันสร้างโปรเจกต์ใหม่ (เหมือนเดิม) ---
 export async function createProject(formData: FormData) {
   const session = await auth()
   if (!session?.user?.id) {
@@ -14,10 +15,8 @@ export async function createProject(formData: FormData) {
   const projectName = formData.get("projectName") as string
   const templateId = formData.get("templateId") as string || "valentine-theme"
 
-  // สร้าง URL (Slug)
   const slug = `${projectName.toLowerCase().replace(/\s+/g, '-')}-${Math.floor(Math.random() * 10000)}`
 
-  // บันทึกลง Database
   const newProject = await prisma.project.create({
     data: {
       name: projectName,
@@ -25,14 +24,14 @@ export async function createProject(formData: FormData) {
       templateId: templateId,
       userId: session.user.id,
       customData: {}, 
-      isPublished: true, // <--- แก้เป็น true (ให้เว็บใช้งานได้ทันที ไม่ต้องรอจ่ายเงิน)
+      isPublished: true, 
     },
   })
 
   redirect(`/editor/${newProject.id}`)
 }
 
-// --- 2. ฟังก์ชันอัปเดตข้อมูลและรูปภาพ ---
+// --- 2. ฟังก์ชันอัปเดตข้อมูลและรูปภาพ (แก้ไขใหม่) ---
 export async function updateProject(formData: FormData) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
@@ -58,5 +57,7 @@ export async function updateProject(formData: FormData) {
     },
   })
   
-  redirect(`/editor/${projectId}`)
+  // เปลี่ยนจาก redirect เป็น revalidatePath (อัปเดตข้อมูลโดยไม่ต้องรีโหลดหน้า)
+  revalidatePath(`/editor/${projectId}`)
+  revalidatePath(`/p/${projectId}`) // อัปเดตหน้า Preview ด้วย
 }
