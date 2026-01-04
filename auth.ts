@@ -6,11 +6,14 @@ import { prisma } from "@/lib/prisma"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  debug: true, // เปิด Debug Mode เพื่อดู Log ใน Vercel เวลาเกิดปัญหา
   providers: [
     Line({
       clientId: process.env.LINE_CLIENT_ID,
       clientSecret: process.env.LINE_CLIENT_SECRET,
-      authorization: { params: { scope: "openid profile email" } }, 
+      // บังคับขอ Scope และลดการตรวจสอบให้เหลือแค่ state เพื่อความเข้ากันได้บนมือถือ
+      authorization: { params: { scope: "openid profile email" } },
+      checks: ["state"], 
     }),
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -20,16 +23,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/login",
   },
-  // --- เพิ่มส่วนนี้เพื่อแก้ปัญหาบน Vercel/Mobile ---
-  trustHost: true, // เชื่อใจ Host header จาก Vercel (สำคัญมากสำหรับ Serverless)
+  // --- การตั้งค่าสำหรับ Vercel และ Mobile ---
+  trustHost: true, 
+  secret: process.env.AUTH_SECRET, // ระบุ Secret ให้ชัดเจน (ดึงจาก .env)
   session: {
-    strategy: "jwt", // ใช้ JWT เพื่อลดปัญหา Cookie บนมือถือบางรุ่น
+    strategy: "jwt",
   },
   callbacks: {
     async session({ session, token }) {
       if (session.user && token.sub) {
         // @ts-ignore
-        session.user.id = token.sub // ดึง ID จาก Token มาใส่ Session
+        session.user.id = token.sub
       }
       return session
     },
@@ -40,5 +44,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token
     }
   },
-  // ---------------------------------------------
 })
