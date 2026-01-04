@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, ChangeEvent } from 'react'
+import UploadButton from '@/components/UploadButton'
 import ImageCropper from '@/components/ImageCropper'
 
 // --- Helper Functions ---
@@ -13,7 +14,10 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-// ใช้ฟังก์ชันนี้ถ้าต้องการอัปโหลดขึ้น Cloudinary (ต้องตั้งค่า Preset เป็น Unsigned)
+// Alias ให้เรียกใช้ได้ทั้ง 2 ชื่อ
+const fileToBase64 = blobToBase64; 
+
+// ฟังก์ชันอัปโหลดรูป
 const uploadToCloudinary = async (blob: Blob) => {
   const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
@@ -41,15 +45,15 @@ const CATEGORIES = [
   { id: 'apology', label: 'ขอโทษ 🥺', color: '#3b82f6' },
 ]
 
-// Updated Quiz Interface with Explanation fields
+// Interface
 interface QuizItem {
   id: string;
   type: 'text' | 'date' | 'choice';
   question: string;
   answer: string;
   options: string[];
-  explanationImage?: string; // รูปเฉลย/รางวัล
-  explanationText?: string;  // ข้อความเฉลย/รางวัล
+  explanationImage?: string; 
+  explanationText?: string; 
 }
 
 export default function EditorForm({ project, updateProjectAction }: { project: any, updateProjectAction: any }) {
@@ -66,18 +70,18 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
   const [musicStart, setMusicStart] = useState(project.customData?.musicStart || "0")
   const [musicEnd, setMusicEnd] = useState(project.customData?.musicEnd || "")
   const [gallery, setGallery] = useState<string[]>(project.customData?.gallery || [])
-  
-  // Quiz State
   const [quizzes, setQuizzes] = useState<QuizItem[]>(project.customData?.quizzes || [])
 
   // Cropper State
   const [tempImage, setTempImage] = useState<string | null>(null)
   const [isCropping, setIsCropping] = useState(false)
-  const [croppingTarget, setCroppingTarget] = useState<'main' | 'quiz'>('main') // ระบุว่ากำลัง Crop รูปไหน (main หรือ quiz)
-  const [currentQuizIndexForCrop, setCurrentQuizIndexForCrop] = useState<number | null>(null) // เก็บ index ของ quiz ที่กำลังอัปรูป
+  const [croppingTarget, setCroppingTarget] = useState<'main' | 'quiz'>('main')
+  const [currentQuizIndexForCrop, setCurrentQuizIndexForCrop] = useState<number | null>(null)
+  
+  // Upload State
+  const [isUploading, setIsUploading] = useState(false) // สถานะอัปโหลดรวม
 
   const [isPending, startTransition] = useTransition()
-  const [isUploading, setIsUploading] = useState(false)
 
   const daysTogether = anniversaryDate 
     ? Math.floor((new Date().getTime() - new Date(anniversaryDate).getTime()) / (1000 * 3600 * 24)) 
@@ -139,11 +143,27 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
     }
   }
 
-  const handleCropComplete = async (blob: Blob) => {
+  // --- FIX: handleCropComplete แบบ Robust ---
+  const handleCropComplete = async (arg1: any, arg2?: any) => {
     setIsCropping(false)
     setIsUploading(true)
+    
+    // ค้นหา Blob ตัวจริงจาก Argument ที่ส่งมา
+    let blob: Blob | null = null;
+    if (arg1 instanceof Blob) {
+      blob = arg1;
+    } else if (arg2 instanceof Blob) {
+      blob = arg2;
+    }
+
+    if (!blob) {
+       setIsUploading(false)
+       setTempImage(null)
+       alert("เกิดข้อผิดพลาด: ไม่สามารถประมวลผลรูปภาพได้ (Invalid Blob)")
+       return
+    }
+
     try {
-      // ใช้วิธีอัปโหลดไป Cloudinary เพื่อความเสถียรและ URL ที่ถาวร
       const newUrl = await uploadToCloudinary(blob)
       
       if (croppingTarget === 'main') {
@@ -164,9 +184,9 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
   const handleAddGalleryImage = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      setIsUploading(true)
+      setIsUploading(true) // ใช้ state รวม
       try {
-        const newUrl = await uploadToCloudinary(file) // Gallery ไม่ต้อง Crop เพื่อความไว
+        const newUrl = await uploadToCloudinary(file)
         setGallery(prev => [...prev, newUrl])
       } catch (error) {
         alert(`อัปโหลดรูป Gallery ไม่สำเร็จ: ${(error as Error).message}`)
@@ -360,7 +380,16 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
                             type="text"
                             placeholder={`ตัวเลือกที่ ${optIdx + 1}`}
                             value={opt}
-                            onChange={(e) => updateQuizOption(idx, optIdx, e.target.value)}
+                            onChange={(e) => {
+                              const newQuizzes = [...quizzes]
+                              const newOptions = [...newQuizzes[idx].options]
+                              newOptions[optIdx] = e.target.value
+                              newQuizzes[idx].options = newOptions
+                              if (newQuizzes[idx].answer === quizzes[idx].options[optIdx]) {
+                                newQuizzes[idx].answer = e.target.value
+                              }
+                              setQuizzes(newQuizzes)
+                            }}
                             className={`flex-1 px-2 py-1.5 rounded border text-xs outline-none text-black ${quiz.answer === opt && opt !== "" ? 'bg-green-50 border-green-200' : 'border-gray-200'}`}
                           />
                         </div>
@@ -396,8 +425,14 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
                          </div>
                        ) : (
                          <div className="w-12 h-12 rounded border-2 border-dashed flex items-center justify-center bg-gray-50 text-gray-400 shrink-0 relative">
-                           <span className="text-xs">รูป</span>
-                           <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleQuizImageChange(e, idx)} />
+                           {isUploading && croppingTarget === 'quiz' && currentQuizIndexForCrop === idx ? (
+                             <span className="text-xs animate-pulse">...</span>
+                           ) : (
+                             <>
+                               <span className="text-xs">รูป</span>
+                               <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleQuizImageChange(e, idx)} />
+                             </>
+                           )}
                          </div>
                        )}
                        

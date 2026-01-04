@@ -3,12 +3,13 @@
 import { useState, useRef, useEffect } from 'react'
 import PhotoGallery from '@/components/PhotoGallery'
 
-// --- Inline Typewriter ---
+// --- 1. Inline Typewriter Component ---
 function TypewriterEffect({ text, speed = 50 }: { text: string, speed?: number }) {
   const [displayedText, setDisplayedText] = useState("")
   const [currentIndex, setCurrentIndex] = useState(0)
 
   useEffect(() => {
+    // รีเซ็ตเมื่อข้อความเปลี่ยน
     setDisplayedText("")
     setCurrentIndex(0)
   }, [text])
@@ -55,6 +56,7 @@ const getSpotifyEmbed = (url: string) => {
   return null;
 }
 
+// Interface
 interface Heart {
   left: string;
   delay: string;
@@ -62,13 +64,14 @@ interface Heart {
   icon: string;
 }
 
-// Quiz Interface
 interface QuizItem {
   id: string;
   type: 'text' | 'date' | 'choice';
   question: string;
   answer: string;
   options: string[];
+  explanationImage?: string; // เพิ่มฟิลด์รูปเฉลย
+  explanationText?: string;  // เพิ่มฟิลด์ข้อความเฉลย
 }
 
 export default function InteractiveView({ data }: { data: any }) {
@@ -78,21 +81,26 @@ export default function InteractiveView({ data }: { data: any }) {
   const [passcode, setPasscode] = useState("")
   const audioRef = useRef<HTMLAudioElement>(null)
   
+  // State สำหรับหัวใจ (ป้องกัน Hydration Error)
   const [hearts, setHearts] = useState<Heart[]>([])
 
   // Quiz Logic
   const quizzes: QuizItem[] = data.quizzes || []
+  // รองรับข้อมูลเก่า (Backward Compatibility)
   if (quizzes.length === 0 && data.quizQuestion) {
     quizzes.push({
       id: 'legacy',
       type: data.quizType || 'text',
       question: data.quizQuestion,
       answer: data.quizAnswer,
-      options: data.quizOptions || []
+      options: data.quizOptions || [],
+      // map ข้อมูลเก่าเข้า structure ใหม่ (ถ้ามี)
+      explanationImage: '',
+      explanationText: ''
     })
   }
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0)
-  const [showIntermission, setShowIntermission] = useState(false) // สถานะโชว์หน้าคั่น
+  const [showIntermission, setShowIntermission] = useState(false) // สถานะโชว์หน้าเฉลย
 
   const themeColor = data.themeColor || "#ec4899"
   const fontStyle = data.fontStyle || "font-sans"
@@ -107,6 +115,7 @@ export default function InteractiveView({ data }: { data: any }) {
     ? Math.floor((new Date().getTime() - new Date(data.anniversaryDate).getTime()) / (1000 * 3600 * 24)) 
     : 0
 
+  // สร้างหัวใจเฉพาะฝั่ง Client (useEffect) เพื่อแก้ Hydration Error
   useEffect(() => {
     const newHearts = Array.from({ length: 15 }).map(() => ({
       left: `${Math.floor(Math.random() * 100)}%`,
@@ -129,6 +138,7 @@ export default function InteractiveView({ data }: { data: any }) {
     }
 
     setTimeout(() => {
+      // ถ้ามี Quiz ให้ไปหน้า Quiz (Step 1), ถ้าไม่มีข้ามไป Cover (Step 2)
       if (quizzes.length > 0) {
         setCurrentStep(1)
       } else {
@@ -138,7 +148,7 @@ export default function InteractiveView({ data }: { data: any }) {
     }, 2000);
   }
 
-  // คำชมที่จะสุ่มมาแสดง
+  // คำชมสุ่ม (กรณีลูกค้าไม่ได้ใส่ข้อความเฉลยมา)
   const compliments = [
     "เก่งจังเลยที่รัก! ❤️",
     "ถูกต้องนะครับคนดี 😘",
@@ -156,19 +166,19 @@ export default function InteractiveView({ data }: { data: any }) {
     }
   }
 
-  const checkAnswer = (e: React.FormEvent) => {
+  const checkAnswer = (e: React.FormEvent, selectedOption?: string) => {
     e.preventDefault()
     const currentQuiz = quizzes[currentQuizIndex]
-    
-    if (currentQuiz.answer && passcode.trim() !== currentQuiz.answer) {
+    const answerToCheck = selectedOption || passcode
+
+    // ตรวจคำตอบ (Trim ช่องว่างทิ้ง และเทียบ case-insensitive แบบง่ายๆ)
+    if (currentQuiz.answer && answerToCheck.trim().toLowerCase() !== currentQuiz.answer.trim().toLowerCase()) {
       alert("ผิดนะจ๊ะ ลองใหม่เข๊ะ! 😜")
       return
     }
     
-    setPasscode("") // เคลียร์คำตอบ
-    
-    // โชว์หน้าคั่นทุกข้อ (หรือจะปรับเป็นทุก 2 ข้อก็ได้โดยใช้ % 2)
-    setShowIntermission(true);
+    setPasscode("") 
+    setShowIntermission(true); // เปิดหน้าเฉลย
   }
 
   return (
@@ -197,57 +207,81 @@ export default function InteractiveView({ data }: { data: any }) {
 
       <div className="flex-1 relative w-full h-full">
         
-        {/* STEP 0: ENVELOPE */}
+        {/* STEP 0: ENVELOPE (อนิเมชั่นเปิดซอง) */}
         <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${currentStep === 0 ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
            <div className="flex flex-col items-center perspective-1000 relative">
               <div className="relative w-80 h-52 cursor-pointer" onClick={handleOpenEnvelope}>
+                {/* 1. ด้านหลังซอง (ร่วงลง) */}
                 <div className={`absolute inset-0 rounded-b-xl transition-all duration-1000 ease-in-out z-0 ${isAnimating ? 'translate-y-[150%] opacity-0' : ''}`} style={{ backgroundColor: themeColor, filter: 'brightness(0.7)' }}></div>
-                <div className={`absolute left-4 right-4 bg-white shadow-md p-6 text-center transition-all duration-1000 ease-in-out z-10 flex flex-col items-center rounded-lg border border-gray-100 ${isAnimating ? '-translate-y-24 scale-125 opacity-100 shadow-2xl z-50' : 'bottom-2 h-44 justify-center'}`}>
+                
+                {/* 2. การ์ดจดหมาย (ลอยขึ้น) */}
+                <div className={`absolute left-4 right-4 bg-white shadow-md p-6 text-center transition-all duration-1000 ease-in-out z-10 flex flex-col items-center rounded-lg border border-gray-100 ${isAnimating ? '-translate-y-36 scale-110 opacity-100 shadow-2xl z-50' : 'bottom-2 h-44 justify-center'}`}>
                    <div className="text-gray-400 text-xs tracking-widest uppercase mb-2">For You</div>
                    <div className="text-5xl animate-bounce">💌</div>
                    {isAnimating && <p className="text-xs text-pink-400 mt-4 animate-pulse">กำลังเข้าสู่โลกของเรา...</p>}
                 </div>
+
+                {/* 3. กระเป๋าหน้า (ร่วงลง) */}
                 <div className={`absolute inset-0 z-20 pointer-events-none transition-all duration-1000 ease-in-out ${isAnimating ? 'translate-y-[150%] opacity-0' : ''}`}>
                     <div className="absolute bottom-0 left-0 w-0 h-0 border-l-[160px] border-t-[100px] border-b-[104px] border-t-transparent border-b-transparent" style={{ borderLeftColor: themeColor, filter: 'brightness(0.9)' }} />
                     <div className="absolute bottom-0 right-0 w-0 h-0 border-r-[160px] border-t-[100px] border-b-[104px] border-t-transparent border-b-transparent" style={{ borderRightColor: themeColor, filter: 'brightness(0.85)' }} />
                     <div className="absolute bottom-0 w-0 h-0 border-l-[160px] border-r-[160px] border-b-[110px] border-l-transparent border-r-transparent rounded-b-xl" style={{ borderBottomColor: themeColor, filter: 'brightness(1)' }} />
                 </div>
+
+                {/* 4. ฝาปิด (เปิดแล้วร่วงลง) */}
                 <div className={`absolute top-0 w-0 h-0 border-l-[160px] border-r-[160px] border-t-[110px] border-l-transparent border-r-transparent origin-top transition-all duration-1000 ease-in-out z-30 ${isAnimating ? 'rotate-x-180 translate-y-[150%] opacity-0' : 'z-30'}`} style={{ borderTopColor: themeColor, filter: 'brightness(1.1)' }} />
               </div>
               {!isAnimating && <div className="mt-12 text-gray-500 font-medium animate-bounce bg-white/80 px-4 py-2 rounded-full shadow-sm">แตะที่ซองจดหมายเพื่อเปิด ❤️</div>}
            </div>
         </div>
 
-        {/* STEP 1: MINIGAME (QUIZ with Intermission) */}
+        {/* STEP 1: MINIGAME (QUIZZES with INTERMISSION) */}
         {quizzes.length > 0 && (
           <div className={`absolute inset-0 flex items-center justify-center p-6 transition-all duration-700 transform ${currentStep === 1 ? 'translate-y-0 opacity-100 z-10' : 'translate-y-full opacity-0 z-0 pointer-events-none'}`}>
             
-            {/* -- Intermission View (หน้าคั่นคำชม) -- */}
+            {/* --- Intermission View (หน้าคั่นเฉลย/คำชม) --- */}
             {showIntermission ? (
-              <div className="text-center animate-fade-in-up">
-                <div className="text-8xl mb-6 animate-bounce">
-                  {['🥰', '😍', '😘', '💖', '🎉'][currentQuizIndex % 5]}
-                </div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-4" style={{ color: themeColor }}>
-                  {compliments[currentQuizIndex % compliments.length]}
+              <div className="bg-white/95 backdrop-blur-xl p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center border-4 animate-fade-in-up flex flex-col items-center relative overflow-hidden" style={{ borderColor: themeColor }}>
+                
+                {/* Background Pattern */}
+                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)', backgroundSize: '10px 10px' }}></div>
+
+                {/* รูปเฉลย (ถ้ามี) */}
+                {quizzes[currentQuizIndex].explanationImage ? (
+                  <div className="mb-6 rounded-2xl overflow-hidden shadow-lg border-4 border-white w-full aspect-square relative group transform hover:scale-105 transition duration-500">
+                    <img src={quizzes[currentQuizIndex].explanationImage} alt="Reward" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="text-8xl mb-6 animate-bounce drop-shadow-md">
+                    {['🥰', '😍', '😘', '💖', '🎉'][currentQuizIndex % 5]}
+                  </div>
+                )}
+
+                <h2 className="text-xl font-bold text-gray-800 mb-2 leading-relaxed" style={{ color: themeColor }}>
+                  {/* แสดงข้อความเฉลยจากลูกค้า หรือคำชมสุ่ม */}
+                  {quizzes[currentQuizIndex].explanationText || compliments[currentQuizIndex % compliments.length]}
                 </h2>
-                <p className="text-gray-500 mb-8">ไปลุยข้อต่อไปกันเลย!</p>
+                
+                <p className="text-gray-400 mb-8 text-xs font-medium tracking-wide uppercase">
+                   {currentQuizIndex < quizzes.length - 1 ? "Next Question" : "Surprise is waiting!"}
+                </p>
+
                 <button 
                   onClick={handleNextQuiz}
-                  className="bg-white text-gray-800 px-8 py-3 rounded-full shadow-lg font-bold hover:scale-105 transition transform border-2"
-                  style={{ borderColor: themeColor, color: themeColor }}
+                  className="w-full text-white px-8 py-3 rounded-full shadow-lg font-bold hover:scale-105 transition transform active:scale-95"
+                  style={{ backgroundColor: themeColor }}
                 >
-                  ไปต่อ ➡️
+                  {currentQuizIndex < quizzes.length - 1 ? "ไปข้อต่อไป ➡️" : "ดูเซอร์ไพรส์ 🎉"}
                 </button>
               </div>
             ) : (
-              /* -- Quiz Question View -- */
+              /* --- Quiz Question View --- */
               <div className="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center border-4 relative" style={{ borderColor: themeColor }}>
                 
-                {/* Pagination Dots */}
+                {/* Pagination */}
                 <div className="absolute top-4 right-4 flex gap-1">
                   {quizzes.map((_, i) => (
-                    <div key={i} className={`w-2 h-2 rounded-full transition-all ${i === currentQuizIndex ? 'bg-pink-500 w-4' : 'bg-gray-300'}`} style={{ backgroundColor: i === currentQuizIndex ? themeColor : undefined }} />
+                    <div key={i} className={`w-2 h-2 rounded-full transition-all ${i === currentQuizIndex ? 'w-4' : ''}`} style={{ backgroundColor: i === currentQuizIndex ? themeColor : '#d1d5db' }} />
                   ))}
                 </div>
 
@@ -255,7 +289,7 @@ export default function InteractiveView({ data }: { data: any }) {
                 <h2 className="text-xl font-bold text-gray-800 mt-2">คำถามข้อที่ {currentQuizIndex + 1}</h2>
                 <p className="text-gray-600 mb-6 font-medium mt-2 text-lg">"{quizzes[currentQuizIndex].question}"</p>
                 
-                <form onSubmit={checkAnswer} className="space-y-4">
+                <form onSubmit={(e) => checkAnswer(e)} className="space-y-4">
                   {quizzes[currentQuizIndex].type === 'choice' && Array.isArray(quizzes[currentQuizIndex].options) ? (
                     <div className="grid grid-cols-1 gap-3">
                       {quizzes[currentQuizIndex].options.map((option, idx) => (
@@ -263,13 +297,8 @@ export default function InteractiveView({ data }: { data: any }) {
                           <button
                             key={idx}
                             type="button"
-                            onClick={() => setPasscode(option)}
-                            className={`w-full py-3 px-4 rounded-xl border-2 transition-all font-medium text-lg ${
-                              passcode === option 
-                                ? 'text-white border-transparent scale-105 shadow-md' 
-                                : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
-                            }`}
-                            style={{ backgroundColor: passcode === option ? themeColor : undefined }}
+                            onClick={(e) => checkAnswer(e, option)} // คลิกแล้วตอบเลย
+                            className="w-full py-3 px-4 rounded-xl border-2 transition-all font-medium text-lg bg-white text-gray-700 border-gray-200 hover:border-pink-300 hover:bg-pink-50 active:scale-95 shadow-sm hover:shadow-md"
                           >
                             {option}
                           </button>
@@ -277,35 +306,32 @@ export default function InteractiveView({ data }: { data: any }) {
                       ))}
                     </div>
                   ) : quizzes[currentQuizIndex].type === 'date' ? (
-                    <input 
-                      type="date" 
-                      className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg font-bold"
-                      style={{ borderColor: `${themeColor}60` }}
-                      value={passcode}
-                      onChange={(e) => setPasscode(e.target.value)}
-                      required
-                    />
+                    <>
+                      <input 
+                        type="date" 
+                        className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg font-bold shadow-sm"
+                        style={{ borderColor: `${themeColor}60` }}
+                        value={passcode}
+                        onChange={(e) => setPasscode(e.target.value)}
+                        required
+                      />
+                      <button type="submit" disabled={!passcode} className="w-full text-white font-bold py-3 rounded-xl shadow-lg transition transform active:scale-95 text-lg mt-2" style={{ backgroundColor: themeColor }}>ตอบเลย 💘</button>
+                    </>
                   ) : (
-                    <input 
-                      type="text" 
-                      className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg"
-                      style={{ borderColor: `${themeColor}60` }}
-                      placeholder="ใส่คำตอบที่นี่..."
-                      value={passcode}
-                      onChange={(e) => setPasscode(e.target.value)}
-                      autoFocus
-                      required
-                    />
+                    <>
+                      <input 
+                        type="text" 
+                        className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg shadow-sm"
+                        style={{ borderColor: `${themeColor}60` }}
+                        placeholder="ใส่คำตอบที่นี่..."
+                        value={passcode}
+                        onChange={(e) => setPasscode(e.target.value)}
+                        autoFocus
+                        required
+                      />
+                      <button type="submit" disabled={!passcode} className="w-full text-white font-bold py-3 rounded-xl shadow-lg transition transform active:scale-95 text-lg mt-2" style={{ backgroundColor: themeColor }}>ตอบเลย 💘</button>
+                    </>
                   )}
-                  
-                  <button 
-                    type="submit" 
-                    disabled={!passcode}
-                    className="w-full text-white font-bold py-3 rounded-xl shadow-lg transition transform active:scale-95 text-lg mt-2 disabled:opacity-50 disabled:cursor-not-allowed" 
-                    style={{ backgroundColor: themeColor }}
-                  >
-                    มั่นใจ! ตอบเลย 💘
-                  </button>
                 </form>
               </div>
             )}
