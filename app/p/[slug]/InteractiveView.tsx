@@ -1,8 +1,35 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import Typewriter from '@/components/Typewriter'
+import { useState, useRef, useEffect } from 'react'
 import PhotoGallery from '@/components/PhotoGallery'
+
+// --- Inline Typewriter ---
+function TypewriterEffect({ text, speed = 50 }: { text: string, speed?: number }) {
+  const [displayedText, setDisplayedText] = useState("")
+  const [currentIndex, setCurrentIndex] = useState(0)
+
+  useEffect(() => {
+    setDisplayedText("")
+    setCurrentIndex(0)
+  }, [text])
+
+  useEffect(() => {
+    if (currentIndex < text.length) {
+      const timeoutId = setTimeout(() => {
+        setDisplayedText((prev) => prev + text.charAt(currentIndex))
+        setCurrentIndex((prev) => prev + 1)
+      }, speed)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [currentIndex, text, speed])
+
+  return (
+    <span className="whitespace-pre-line">
+      {displayedText}
+      <span className="animate-pulse text-pink-500">|</span>
+    </span>
+  )
+}
 
 // --- Helper Functions ---
 const getYouTubeId = (url: string) => {
@@ -28,12 +55,44 @@ const getSpotifyEmbed = (url: string) => {
   return null;
 }
 
+interface Heart {
+  left: string;
+  delay: string;
+  duration: string;
+  icon: string;
+}
+
+// Quiz Interface
+interface QuizItem {
+  id: string;
+  type: 'text' | 'date' | 'choice';
+  question: string;
+  answer: string;
+  options: string[];
+}
+
 export default function InteractiveView({ data }: { data: any }) {
-  // Steps: 0=Envelope, 1=Minigame(Quiz), 2=Cover, 3=Message, 4=Gallery
+  // Steps: 0=Envelope, 1=Quizzes, 2=Cover, 3=Message, 4=Gallery
   const [currentStep, setCurrentStep] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
   const [passcode, setPasscode] = useState("")
   const audioRef = useRef<HTMLAudioElement>(null)
+  
+  const [hearts, setHearts] = useState<Heart[]>([])
+
+  // Quiz Logic
+  const quizzes: QuizItem[] = data.quizzes || []
+  if (quizzes.length === 0 && data.quizQuestion) {
+    quizzes.push({
+      id: 'legacy',
+      type: data.quizType || 'text',
+      question: data.quizQuestion,
+      answer: data.quizAnswer,
+      options: data.quizOptions || []
+    })
+  }
+  const [currentQuizIndex, setCurrentQuizIndex] = useState(0)
+  const [showIntermission, setShowIntermission] = useState(false) // สถานะโชว์หน้าคั่น
 
   const themeColor = data.themeColor || "#ec4899"
   const fontStyle = data.fontStyle || "font-sans"
@@ -48,8 +107,15 @@ export default function InteractiveView({ data }: { data: any }) {
     ? Math.floor((new Date().getTime() - new Date(data.anniversaryDate).getTime()) / (1000 * 3600 * 24)) 
     : 0
 
-  // ตรวจสอบว่ามี Quiz ไหม
-  const hasQuiz = data.quizQuestion && data.quizQuestion.trim() !== ""
+  useEffect(() => {
+    const newHearts = Array.from({ length: 15 }).map(() => ({
+      left: `${Math.floor(Math.random() * 100)}%`,
+      delay: `${Math.random() * 5}s`,
+      duration: `${10 + Math.random() * 10}s`,
+      icon: ['❤️', '💖', '✨', '🌹'][Math.floor(Math.random() * 4)]
+    }))
+    setHearts(newHearts)
+  }, [])
 
   const goToNextStep = () => setCurrentStep(prev => prev + 1)
 
@@ -63,8 +129,7 @@ export default function InteractiveView({ data }: { data: any }) {
     }
 
     setTimeout(() => {
-      // ถ้ามี Quiz ให้ไปหน้า Quiz (Step 1), ถ้าไม่มีข้ามไป Cover (Step 2)
-      if (hasQuiz) {
+      if (quizzes.length > 0) {
         setCurrentStep(1)
       } else {
         setCurrentStep(2)
@@ -73,23 +138,38 @@ export default function InteractiveView({ data }: { data: any }) {
     }, 2000);
   }
 
-  const checkAnswer = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (data.quizAnswer && passcode.trim() !== data.quizAnswer) {
-      alert("ผิดนะจ๊ะ ลองใหม่เข๊ะ! 😜")
-      setPasscode("") // เคลียร์คำตอบ
-      return
+  // คำชมที่จะสุ่มมาแสดง
+  const compliments = [
+    "เก่งจังเลยที่รัก! ❤️",
+    "ถูกต้องนะครับคนดี 😘",
+    "จำได้ด้วยเหรอเนี่ย น่ารักที่สุด! 🥰",
+    "เก่งมากครับ! 💖",
+    "อีกนิดเดียวนะ สู้ๆ! ✌️"
+  ];
+
+  const handleNextQuiz = () => {
+    setShowIntermission(false);
+    if (currentQuizIndex < quizzes.length - 1) {
+      setCurrentQuizIndex(prev => prev + 1)
+    } else {
+      goToNextStep() // จบทุกข้อ ไปหน้า Cover
     }
-    // ตอบถูก -> ไป Cover
-    goToNextStep()
   }
 
-  const hearts = Array.from({ length: 15 }).map((_, i) => ({
-    left: `${Math.floor(Math.random() * 100)}%`,
-    delay: `${Math.random() * 5}s`,
-    duration: `${10 + Math.random() * 10}s`,
-    icon: ['❤️', '💖', '✨', '🌹'][Math.floor(Math.random() * 4)]
-  }))
+  const checkAnswer = (e: React.FormEvent) => {
+    e.preventDefault()
+    const currentQuiz = quizzes[currentQuizIndex]
+    
+    if (currentQuiz.answer && passcode.trim() !== currentQuiz.answer) {
+      alert("ผิดนะจ๊ะ ลองใหม่เข๊ะ! 😜")
+      return
+    }
+    
+    setPasscode("") // เคลียร์คำตอบ
+    
+    // โชว์หน้าคั่นทุกข้อ (หรือจะปรับเป็นทุก 2 ข้อก็ได้โดยใช้ % 2)
+    setShowIntermission(true);
+  }
 
   return (
     <div className={`fixed inset-0 overflow-hidden flex flex-col ${fontStyle}`} style={{ background: `linear-gradient(to bottom right, ${themeColor}15, #ffffff, ${themeColor}30)` }}>
@@ -138,74 +218,97 @@ export default function InteractiveView({ data }: { data: any }) {
            </div>
         </div>
 
-        {/* STEP 1: MINIGAME (QUIZ) - UPDATED! */}
-        {hasQuiz && (
+        {/* STEP 1: MINIGAME (QUIZ with Intermission) */}
+        {quizzes.length > 0 && (
           <div className={`absolute inset-0 flex items-center justify-center p-6 transition-all duration-700 transform ${currentStep === 1 ? 'translate-y-0 opacity-100 z-10' : 'translate-y-full opacity-0 z-0 pointer-events-none'}`}>
-            <div className="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center border-4" style={{ borderColor: themeColor }}>
-              <div className="text-6xl mb-4 animate-bounce">🤔</div>
-              <h2 className="text-xl font-bold text-gray-800 mt-2">ขอถามหน่อย...</h2>
-              <p className="text-gray-600 mb-6 font-medium mt-2 text-lg">"{data.quizQuestion}"</p>
-              
-              <form onSubmit={checkAnswer} className="space-y-4">
-                {/* --- แสดง UI ตามประเภทคำถาม --- */}
-                {data.quizType === 'choice' && Array.isArray(data.quizOptions) ? (
-                  // แบบตัวเลือก (Choice)
-                  <div className="grid grid-cols-1 gap-3">
-                    {data.quizOptions.map((option: string, idx: number) => (
-                      option && (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setPasscode(option)}
-                          className={`w-full py-3 px-4 rounded-xl border-2 transition-all font-medium text-lg ${
-                            passcode === option 
-                              ? 'text-white border-transparent scale-105 shadow-md' 
-                              : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
-                          }`}
-                          style={{ 
-                            backgroundColor: passcode === option ? themeColor : undefined,
-                            borderColor: passcode === option ? themeColor : undefined
-                          }}
-                        >
-                          {option}
-                        </button>
-                      )
-                    ))}
-                  </div>
-                ) : data.quizType === 'date' ? (
-                  // แบบวันที่ (Date)
-                  <input 
-                    type="date" 
-                    className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg font-bold"
-                    style={{ borderColor: `${themeColor}60` }}
-                    value={passcode}
-                    onChange={(e) => setPasscode(e.target.value)}
-                    required
-                  />
-                ) : (
-                  // แบบข้อความปกติ (Text)
-                  <input 
-                    type="text" 
-                    className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg"
-                    style={{ borderColor: `${themeColor}60` }}
-                    placeholder="ใส่คำตอบที่นี่..."
-                    value={passcode}
-                    onChange={(e) => setPasscode(e.target.value)}
-                    autoFocus
-                    required
-                  />
-                )}
-                
+            
+            {/* -- Intermission View (หน้าคั่นคำชม) -- */}
+            {showIntermission ? (
+              <div className="text-center animate-fade-in-up">
+                <div className="text-8xl mb-6 animate-bounce">
+                  {['🥰', '😍', '😘', '💖', '🎉'][currentQuizIndex % 5]}
+                </div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-4" style={{ color: themeColor }}>
+                  {compliments[currentQuizIndex % compliments.length]}
+                </h2>
+                <p className="text-gray-500 mb-8">ไปลุยข้อต่อไปกันเลย!</p>
                 <button 
-                  type="submit" 
-                  disabled={!passcode}
-                  className="w-full text-white font-bold py-3 rounded-xl shadow-lg transition transform active:scale-95 text-lg mt-2 disabled:opacity-50 disabled:cursor-not-allowed" 
-                  style={{ backgroundColor: themeColor }}
+                  onClick={handleNextQuiz}
+                  className="bg-white text-gray-800 px-8 py-3 rounded-full shadow-lg font-bold hover:scale-105 transition transform border-2"
+                  style={{ borderColor: themeColor, color: themeColor }}
                 >
-                  มั่นใจ! ตอบเลย 💘
+                  ไปต่อ ➡️
                 </button>
-              </form>
-            </div>
+              </div>
+            ) : (
+              /* -- Quiz Question View -- */
+              <div className="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center border-4 relative" style={{ borderColor: themeColor }}>
+                
+                {/* Pagination Dots */}
+                <div className="absolute top-4 right-4 flex gap-1">
+                  {quizzes.map((_, i) => (
+                    <div key={i} className={`w-2 h-2 rounded-full transition-all ${i === currentQuizIndex ? 'bg-pink-500 w-4' : 'bg-gray-300'}`} style={{ backgroundColor: i === currentQuizIndex ? themeColor : undefined }} />
+                  ))}
+                </div>
+
+                <div className="text-6xl mb-4 animate-bounce">🤔</div>
+                <h2 className="text-xl font-bold text-gray-800 mt-2">คำถามข้อที่ {currentQuizIndex + 1}</h2>
+                <p className="text-gray-600 mb-6 font-medium mt-2 text-lg">"{quizzes[currentQuizIndex].question}"</p>
+                
+                <form onSubmit={checkAnswer} className="space-y-4">
+                  {quizzes[currentQuizIndex].type === 'choice' && Array.isArray(quizzes[currentQuizIndex].options) ? (
+                    <div className="grid grid-cols-1 gap-3">
+                      {quizzes[currentQuizIndex].options.map((option, idx) => (
+                        option && (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setPasscode(option)}
+                            className={`w-full py-3 px-4 rounded-xl border-2 transition-all font-medium text-lg ${
+                              passcode === option 
+                                ? 'text-white border-transparent scale-105 shadow-md' 
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                            }`}
+                            style={{ backgroundColor: passcode === option ? themeColor : undefined }}
+                          >
+                            {option}
+                          </button>
+                        )
+                      ))}
+                    </div>
+                  ) : quizzes[currentQuizIndex].type === 'date' ? (
+                    <input 
+                      type="date" 
+                      className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg font-bold"
+                      style={{ borderColor: `${themeColor}60` }}
+                      value={passcode}
+                      onChange={(e) => setPasscode(e.target.value)}
+                      required
+                    />
+                  ) : (
+                    <input 
+                      type="text" 
+                      className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg"
+                      style={{ borderColor: `${themeColor}60` }}
+                      placeholder="ใส่คำตอบที่นี่..."
+                      value={passcode}
+                      onChange={(e) => setPasscode(e.target.value)}
+                      autoFocus
+                      required
+                    />
+                  )}
+                  
+                  <button 
+                    type="submit" 
+                    disabled={!passcode}
+                    className="w-full text-white font-bold py-3 rounded-xl shadow-lg transition transform active:scale-95 text-lg mt-2 disabled:opacity-50 disabled:cursor-not-allowed" 
+                    style={{ backgroundColor: themeColor }}
+                  >
+                    มั่นใจ! ตอบเลย 💘
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         )}
 
@@ -247,7 +350,7 @@ export default function InteractiveView({ data }: { data: any }) {
                 <div className="text-gray-800 text-lg leading-loose font-medium">
                   {currentStep === 3 && ( 
                     data.useTypingEffect ? (
-                      <Typewriter text={data.message || "..."} speed={50} />
+                      <TypewriterEffect text={data.message || "..."} speed={50} />
                     ) : (
                       <p className="whitespace-pre-line">{data.message}</p>
                     )
@@ -281,8 +384,10 @@ export default function InteractiveView({ data }: { data: any }) {
       </div>
 
       <div className="absolute inset-0 pointer-events-none z-0">
-        {Array.from({ length: 15 }).map((_, i) => (
-          <div key={i} className="absolute opacity-40 animate-float" style={{ left: `${Math.floor(Math.random() * 100)}%`, animationDelay: `${Math.random() * 5}s`, animationDuration: `${10 + Math.random() * 10}s`, bottom: '-10%', color: themeColor, fontSize: `${Math.random() * 20 + 20}px` }}>{['❤️', '💖', '✨', '🌹'][Math.floor(Math.random() * 4)]}</div>
+        {hearts.map((h, i) => (
+          <div key={i} className="absolute opacity-40 animate-float" style={{ left: h.left, animationDelay: h.delay, animationDuration: h.duration, bottom: '-10%', color: themeColor, fontSize: '24px' }}>
+            {h.icon}
+          </div>
         ))}
       </div>
 
@@ -291,6 +396,8 @@ export default function InteractiveView({ data }: { data: any }) {
         .rotate-x-180 { transform: rotateX(180deg); }
         @keyframes float { 0% { transform: translateY(0) rotate(0deg); opacity: 0; } 10% { opacity: 0.6; } 100% { transform: translateY(-120vh) rotate(360deg); opacity: 0; } }
         .animate-float { animation-name: float; animation-timing-function: linear; animation-iteration-count: infinite; }
+        .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
     </div>
   )
