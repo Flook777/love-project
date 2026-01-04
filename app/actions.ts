@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
-import { revalidatePath } from "next/cache" // <--- เพิ่มตัวนี้มาใหม่
+import { revalidatePath } from "next/cache"
 
 // --- 1. ฟังก์ชันสร้างโปรเจกต์ใหม่ (เหมือนเดิม) ---
 export async function createProject(formData: FormData) {
@@ -31,20 +31,36 @@ export async function createProject(formData: FormData) {
   redirect(`/editor/${newProject.id}`)
 }
 
-// --- 2. ฟังก์ชันอัปเดตข้อมูลและรูปภาพ (แก้ไขใหม่) ---
+// --- 2. ฟังก์ชันอัปเดตข้อมูล (เพิ่มการรับค่าใหม่) ---
 export async function updateProject(formData: FormData) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
 
   const projectId = formData.get("projectId") as string
+  
+  // ข้อมูลเดิม
   const title = formData.get("title") as string
   const message = formData.get("message") as string
   const imageUrl = formData.get("imageUrl") as string
 
+  // ข้อมูลใหม่ (ลูกเล่น)
+  const anniversaryDate = formData.get("anniversaryDate") as string
+  const quizQuestion = formData.get("quizQuestion") as string
+  const quizAnswer = formData.get("quizAnswer") as string
+    const themeColor = formData.get("themeColor") as string
+    const bgMusicUrl = formData.get("bgMusicUrl") as string
+    const fontStyle = formData.get("fontStyle") as string
+
   const customData = {
     title,
     message,
-    imageUrl
+    imageUrl,
+    anniversaryDate, // วันครบรอบ
+    quizQuestion,    // คำถาม
+    quizAnswer,
+    themeColor,
+    bgMusicUrl,
+    fontStyle    // คำตอบ
   }
 
   await prisma.project.update({
@@ -57,7 +73,6 @@ export async function updateProject(formData: FormData) {
     },
   })
   
-  // เปลี่ยนจาก redirect เป็น revalidatePath (อัปเดตข้อมูลโดยไม่ต้องรีโหลดหน้า)
   revalidatePath(`/editor/${projectId}`)
-  revalidatePath(`/p/${projectId}`) // อัปเดตหน้า Preview ด้วย
+  revalidatePath(`/p/${projectId}`)
 }

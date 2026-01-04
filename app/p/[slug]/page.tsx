@@ -1,70 +1,41 @@
 import { prisma } from "@/lib/prisma"
 import { notFound } from "next/navigation"
+import Link from "next/link"
+import InteractiveView from "./InteractiveView"
 
-// หน้านี้รับค่า slug จาก URL (เช่น /p/love-you-3000)
 export default async function ProjectPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
 
-  // 1. ค้นหาโปรเจกต์จาก Slug (ไม่ต้องเช็ค User ID เพราะใครก็ดูได้)
   const project = await prisma.project.findUnique({
     where: { slug: slug }
   })
 
-  // ถ้าหาไม่เจอ ให้ขึ้นหน้า 404
   if (!project) notFound()
 
-  // ดึงข้อมูล JSON ออกมา
-  const data = project.customData as any || {}
-
-  // เลือก Theme ในการแสดงผล (เผื่ออนาคตมีหลายธีม)
-  const theme = project.templateId || "valentine"
-
-  return (
-    <div className="min-h-screen bg-pink-50 flex items-center justify-center p-4 overflow-hidden relative">
-      
-      {/* Background Effect (หัวใจลอย) - เดี๋ยวค่อยใส่เพิ่ม */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-         {/* ใส่ CSS Animation ทีหลัง */}
-      </div>
-
-      <div className="max-w-md w-full bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl overflow-hidden border-4 border-white relative z-10 animate-fade-in-up">
-        
-        {/* ส่วนรูปภาพ */}
-        <div className="relative h-80 bg-gray-200">
-          {data.imageUrl ? (
-            <img 
-              src={data.imageUrl} 
-              alt="Our Memory" 
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full text-gray-400">
-              ไม่มีรูปภาพ
-            </div>
-          )}
-          {/* Gradient บังแดดด้านล่างรูป */}
-          <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-black/60 to-transparent"></div>
-        </div>
-
-        {/* ส่วนข้อความ */}
-        <div className="p-8 text-center -mt-10 relative">
-          <div className="inline-block bg-white p-2 rounded-full shadow-lg mb-4">
-            <span className="text-4xl">❤️</span>
-          </div>
-          
-          <h1 className="text-3xl font-bold text-pink-600 mb-4 font-serif">
-            {data.title || "Happy Anniversary"}
-          </h1>
-          
-          <p className="text-gray-700 leading-relaxed whitespace-pre-line text-lg">
-            {data.message || "ขอบคุณที่อยู่เคียงข้างกันนะ..."}
+  // --- ส่วนที่ 1: เช็คสถานะการจ่ายเงิน (Lock Screen) ---
+  if (!project.isPublished) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4 font-sans">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center space-y-6">
+          <div className="text-6xl animate-pulse">🔒</div>
+          <h1 className="text-2xl font-bold text-gray-800">เว็บไซต์นี้ถูกล็อคอยู่</h1>
+          <p className="text-gray-600">
+            กรุณาแจ้งเจ้าของโปรเจกต์ให้ชำระเงินเพื่อปลดล็อคเว็บไซต์เซอร์ไพรส์นี้นะครับ
           </p>
-
-          <div className="mt-8 text-sm text-gray-400">
-            Created with Love Project 💖
-          </div>
+          <Link 
+             href="/dashboard"
+             className="inline-block bg-pink-500 text-white px-6 py-3 rounded-lg font-bold shadow hover:bg-pink-600 transition"
+          >
+            กลับไปที่ Dashboard
+          </Link>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
+
+  // --- ส่วนที่ 2: เรียกใช้ Interactive View (Client Component) ---
+  const data = project.customData as any || {}
+  
+  // ส่ง data ทั้งหมดไปให้ Client Component จัดการต่อ
+  return <InteractiveView data={data} />
 }
