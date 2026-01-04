@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
-import { revalidatePath } from "next/cache" // สำคัญมาก! ต้องมีตัวนี้
+import { revalidatePath } from "next/cache"
 
 // --- 1. ฟังก์ชันสร้างโปรเจกต์ใหม่ ---
 export async function createProject(formData: FormData) {
@@ -13,14 +13,14 @@ export async function createProject(formData: FormData) {
   }
 
   const projectName = formData.get("projectName") as string
-  // ถ้า templateId ไม่ได้เลือก ให้ใช้ default
   const templateId = (formData.get("templateId") as string) || "valentine-theme"
 
   if (!projectName) {
     throw new Error("กรุณาใส่ชื่อโปรเจกต์")
   }
 
-  const slug = `${projectName.toLowerCase().replace(/\s+/g, '-')}-${Math.floor(Math.random() * 10000)}`
+  // สร้าง Slug (URL) จากชื่อโปรเจกต์
+  const slug = `${projectName.toLowerCase().trim().replace(/\s+/g, '-')}-${Math.floor(Math.random() * 10000)}`
 
   const newProject = await prisma.project.create({
     data: {
@@ -33,9 +33,7 @@ export async function createProject(formData: FormData) {
     },
   })
 
-  // สั่งให้หน้า Dashboard อัปเดตข้อมูลใหม่ทันที
   revalidatePath('/dashboard')
-  
   redirect(`/editor/${newProject.id}`)
 }
 
@@ -56,7 +54,7 @@ export async function updateProject(formData: FormData) {
   const message = formData.get("message") as string
   const imageUrl = formData.get("imageUrl") as string
   
-  // ข้อมูลลูกเล่น (Game & Features)
+  // ข้อมูลลูกเล่น
   const anniversaryDate = formData.get("anniversaryDate") as string
   const quizQuestion = formData.get("quizQuestion") as string
   const quizAnswer = formData.get("quizAnswer") as string
@@ -79,7 +77,7 @@ export async function updateProject(formData: FormData) {
     gallery = []
   }
 
-  // Quizzes (NEW: รับเป็น Array)
+  // Quizzes
   const quizzesJson = formData.get("quizzes") as string
   let quizzes = []
   try {
@@ -88,7 +86,7 @@ export async function updateProject(formData: FormData) {
     quizzes = []
   }
 
-  // Quiz Options (Legacy support for single quiz)
+  // Quiz Options
   const quizOptionsJson = formData.get("quizOptions") as string
   let quizOptions = ["", "", "", ""]
   try {
@@ -117,7 +115,7 @@ export async function updateProject(formData: FormData) {
   }
 
   try {
-    // อัปเดตข้อมูลลง DB
+    // 🔥 แก้ไขจุดสำคัญ: ต้องรับค่าที่อัปเดตกลับมา เพื่อเอา slug ไปรีเฟรชหน้าเว็บ
     const updatedProject = await prisma.project.update({
       where: { 
         id: projectId, 
@@ -127,11 +125,14 @@ export async function updateProject(formData: FormData) {
         customData: customData,
       },
     })
+    
     console.log("✅ Project updated:", projectId)
     
-    // 🔥 บรรทัดสำคัญที่สุด: สั่งให้หน้าเว็บรีเฟรชข้อมูลใหม่
-    revalidatePath(`/editor/${projectId}`)  // รีเฟรชหน้า Editor
-    revalidatePath(`/p/${updatedProject.slug}`) // รีเฟรชหน้าเว็บจริง (Public Page)
+    // รีเฟรชหน้า Editor
+    revalidatePath(`/editor/${projectId}`)
+    
+    // 🔥 แก้ไขแล้ว: รีเฟรชหน้าเว็บจริงด้วย Slug ที่ถูกต้อง (ไม่ใช่ ID)
+    revalidatePath(`/p/${updatedProject.slug}`) 
     
   } catch (error) {
     console.error("❌ Failed to update project:", error)
