@@ -13,7 +13,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: process.env.LINE_CLIENT_ID,
       clientSecret: process.env.LINE_CLIENT_SECRET,
       // บังคับใช้ checks: ["state"] เพื่อความเข้ากันได้สูงสุดกับ Line บนมือถือ
-      checks: ["state"],
+      checks: ["state"], // ใช้ state check อย่างเดียวเพื่อลดปัญหากับบาง browser บน mobile
       authorization: { params: { scope: "openid profile email" } },
     }),
     Google({
@@ -32,6 +32,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: {
     strategy: "jwt",
   },
+  
+  // การตั้งค่า Cookies ขั้นสูงสำหรับ Cross-site (จำเป็นสำหรับ Line Login บน Mobile บางกรณี)
   cookies: {
     sessionToken: {
       name: `__Secure-next-auth.session-token`,
@@ -41,7 +43,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         path: '/',
         secure: true
       }
-    }
+    },
+    callbackUrl: {
+      name: `__Secure-next-auth.callback-url`,
+      options: {
+        sameSite: 'lax',
+        path: '/',
+        secure: true
+      }
+    },
+    csrfToken: {
+      name: `__Host-next-auth.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: true
+      }
+    },
   },
 
   callbacks: {
