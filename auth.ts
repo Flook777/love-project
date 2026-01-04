@@ -6,13 +6,13 @@ import { prisma } from "@/lib/prisma"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  // เปิด Debug เสมอ เพื่อให้เห็น Error ใน Vercel Logs
+  // เปิด debug เฉพาะตอน dev (หรือเปิดไว้ก่อนถ้ายังแก้ไม่หาย)
   debug: true, 
   providers: [
     Line({
       clientId: process.env.LINE_CLIENT_ID,
       clientSecret: process.env.LINE_CLIENT_SECRET,
-      // Remove manual checks configuration to let NextAuth handle defaults (PKCE)
+      // ใช้ค่า Default ของ NextAuth (รองรับทั้ง PKCE และ State อัตโนมัติ)
       authorization: { params: { scope: "openid profile email" } },
     }),
     Google({
@@ -23,43 +23,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/login",
   },
-  // ตั้งค่า Trust Host เพื่อให้ทำงานบน Vercel ได้ถูกต้อง
-  trustHost: true, 
-  secret: process.env.AUTH_SECRET, 
   
-  // ปรับแต่ง Session และ Cookie
+  // ✅ Key สำคัญ: บอกให้ NextAuth เชื่อใจ Vercel Proxy
+  trustHost: true, 
+  
+  // ✅ ลบส่วน cookies: { ... } ออกทั้งหมด เพื่อให้ระบบจัดการเอง (แก้ปัญหา InvalidCheck)
+  
   session: {
     strategy: "jwt",
-  },
-  
-  // การตั้งค่า Cookies ขั้นสูงสำหรับ Cross-site (จำเป็นสำหรับ Line Login บน Mobile บางกรณี)
-  cookies: {
-    sessionToken: {
-      name: `__Secure-next-auth.session-token`,
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: true
-      }
-    },
-    callbackUrl: {
-      name: `__Secure-next-auth.callback-url`,
-      options: {
-        sameSite: 'lax',
-        path: '/',
-        secure: true
-      }
-    },
-    csrfToken: {
-      name: `__Host-next-auth.csrf-token`,
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: true
-      }
-    },
   },
 
   callbacks: {
