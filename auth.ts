@@ -12,8 +12,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Line({
       clientId: process.env.LINE_CLIENT_ID,
       clientSecret: process.env.LINE_CLIENT_SECRET,
-      // บังคับใช้ checks: ["state"] เพื่อความเข้ากันได้สูงสุดกับ Line บนมือถือ
-      checks: ["state"], // ใช้ state check อย่างเดียวเพื่อลดปัญหากับบาง browser บน mobile
+      // Remove manual checks configuration to let NextAuth handle defaults (PKCE)
       authorization: { params: { scope: "openid profile email" } },
     }),
     Google({
