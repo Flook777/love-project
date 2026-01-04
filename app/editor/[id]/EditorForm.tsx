@@ -14,15 +14,14 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-// Alias ให้เรียกใช้ได้ทั้ง 2 ชื่อ
 const fileToBase64 = blobToBase64; 
 
-// ฟังก์ชันอัปโหลดรูป
+// ฟังก์ชันอัปโหลด (ใช้ Base64 เพื่อความชัวร์)
 const uploadToCloudinary = async (blob: Blob) => {
   const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
 
-  if (!uploadPreset || !cloudName) throw new Error("Missing Cloudinary Config")
+  if (!uploadPreset || !cloudName) throw new Error("ไม่พบค่า Cloudinary Config ใน .env")
 
   const base64Data = await blobToBase64(blob);
   const formData = new FormData()
@@ -45,7 +44,6 @@ const CATEGORIES = [
   { id: 'apology', label: 'ขอโทษ 🥺', color: '#3b82f6' },
 ]
 
-// Interface
 interface QuizItem {
   id: string;
   type: 'text' | 'date' | 'choice';
@@ -72,14 +70,13 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
   const [gallery, setGallery] = useState<string[]>(project.customData?.gallery || [])
   const [quizzes, setQuizzes] = useState<QuizItem[]>(project.customData?.quizzes || [])
 
-  // Cropper State
+  // Cropper & Upload State
   const [tempImage, setTempImage] = useState<string | null>(null)
   const [isCropping, setIsCropping] = useState(false)
   const [croppingTarget, setCroppingTarget] = useState<'main' | 'quiz'>('main')
   const [currentQuizIndexForCrop, setCurrentQuizIndexForCrop] = useState<number | null>(null)
-  
-  // Upload State
-  const [isUploading, setIsUploading] = useState(false) // สถานะอัปโหลดรวม
+  const [isUploading, setIsUploading] = useState(false)
+  const [copySuccess, setCopySuccess] = useState(false) // สถานะการ Copy Link
 
   const [isPending, startTransition] = useTransition()
 
@@ -143,18 +140,14 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
     }
   }
 
-  // --- FIX: handleCropComplete แบบ Robust ---
+  // รองรับทั้ง Blob และ String
   const handleCropComplete = async (arg1: any, arg2?: any) => {
     setIsCropping(false)
     setIsUploading(true)
     
-    // ค้นหา Blob ตัวจริงจาก Argument ที่ส่งมา
     let blob: Blob | null = null;
-    if (arg1 instanceof Blob) {
-      blob = arg1;
-    } else if (arg2 instanceof Blob) {
-      blob = arg2;
-    }
+    if (arg1 instanceof Blob) blob = arg1;
+    else if (arg2 instanceof Blob) blob = arg2;
 
     if (!blob) {
        setIsUploading(false)
@@ -165,13 +158,11 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
 
     try {
       const newUrl = await uploadToCloudinary(blob)
-      
       if (croppingTarget === 'main') {
         setImageUrl(newUrl)
       } else if (croppingTarget === 'quiz' && currentQuizIndexForCrop !== null) {
         updateQuiz(currentQuizIndexForCrop, 'explanationImage', newUrl)
       }
-
     } catch (error) {
       alert(`อัปโหลดรูปไม่สำเร็จ: ${(error as Error).message}`)
     } finally {
@@ -184,7 +175,7 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
   const handleAddGalleryImage = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      setIsUploading(true) // ใช้ state รวม
+      setIsUploading(true)
       try {
         const newUrl = await uploadToCloudinary(file)
         setGallery(prev => [...prev, newUrl])
@@ -203,6 +194,15 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
   const handleSelectCategory = (catId: string, color: string) => {
     setSelectedCategory(catId)
     setThemeColor(color)
+  }
+  
+  // --- Copy Link Handler ---
+  const handleCopyLink = () => {
+    const link = `${window.location.origin}/p/${project.slug}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    });
   }
 
   const handleSubmit = (formData: FormData) => {
@@ -226,7 +226,6 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
   return (
     <div className={`flex flex-col md:flex-row min-h-screen ${fontStyle}`}>
       
-      {/* Cropper Modal */}
       {isCropping && tempImage && (
         <ImageCropper 
           imageSrc={tempImage}
@@ -325,7 +324,7 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
             </div>
           </div>
 
-          {/* --- Multi-Quiz Editor (UPDATED) --- */}
+          {/* --- Multi-Quiz Editor --- */}
           <div className="border-t border-dashed pt-6 mt-6">
             <h3 className="font-bold mb-4 flex items-center justify-between" style={{ color: themeColor }}>
               <span className="flex items-center gap-2">🎮 เกมตอบคำถาม ({quizzes.length})</span>
@@ -415,8 +414,6 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
                   {/* --- Explanation Section (รางวัลตอนตอบถูก) --- */}
                   <div className="bg-white p-3 rounded-lg border border-pink-100">
                     <p className="text-xs font-bold text-pink-500 mb-2">🎁 รางวัลเมื่อตอบถูก (Optional)</p>
-                    
-                    {/* Image Upload */}
                     <div className="flex items-center gap-3 mb-2">
                        {quiz.explanationImage ? (
                          <div className="relative w-12 h-12 rounded border overflow-hidden shrink-0 group">
@@ -500,18 +497,26 @@ export default function EditorForm({ project, updateProjectAction }: { project: 
             </div>
           </div>
 
-          <button 
-            type="submit" 
-            disabled={isPending || isUploading}
-            className={`w-full font-bold py-3 rounded-lg shadow-lg transition flex justify-center items-center gap-2 text-white mt-8`}
-            style={{ backgroundColor: (isPending || isUploading) ? '#9ca3af' : themeColor }}
-          >
-            {(isPending || isUploading) ? <span className="animate-spin">⏳</span> : '💾 บันทึกข้อมูล'}
-          </button>
+          {/* Action Buttons */}
+          <div className="flex flex-col gap-3 mt-8 pb-10 border-t pt-4">
+            <button 
+                type="button" 
+                onClick={handleCopyLink}
+                className="w-full font-bold py-3 rounded-lg shadow border-2 border-pink-500 text-pink-500 hover:bg-pink-50 transition"
+            >
+                {copySuccess ? "✅ คัดลอกลิงก์แล้ว!" : "🔗 คัดลอกลิงก์ส่งให้แฟน"}
+            </button>
+            
+            <button 
+                type="submit" 
+                disabled={isPending || isUploading}
+                className={`w-full font-bold py-3 rounded-lg shadow-lg transition flex justify-center items-center gap-2 text-white`}
+                style={{ backgroundColor: (isPending || isUploading) ? '#9ca3af' : themeColor }}
+            >
+                {(isPending || isUploading) ? <span className="animate-spin">⏳</span> : '💾 บันทึกข้อมูล'}
+            </button>
 
-          <div className="pt-4 border-t text-center">
-            <a href={`/p/${project.slug}`} target="_blank" className="hover:underline text-sm font-bold" style={{ color: themeColor }}>👁️ ดูตัวอย่างเว็บจริง</a>
-            <div className="mt-2"><a href="/dashboard" className="text-gray-400 hover:text-gray-600 text-xs">&larr; กลับไปแดชบอร์ด</a></div>
+            <a href="/dashboard" className="text-gray-400 hover:text-gray-600 text-xs text-center">&larr; กลับไปแดชบอร์ด</a>
           </div>
         </form>
       </aside>
