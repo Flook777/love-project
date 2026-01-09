@@ -5,13 +5,35 @@ import InteractiveView from "./InteractiveView"
 
 export default async function ProjectPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
+  
+  // 🔥 แก้ไขสำคัญ: ถอดรหัส URL (เช่น ภาษาไทย %E0%B8%...) ให้เป็นตัวหนังสือปกติ
+  const decodedSlug = decodeURIComponent(slug)
+
+  console.log(`🔍 Checking Project: ${slug} -> ${decodedSlug}`)
 
   const project = await prisma.project.findUnique({
-    where: { slug: slug }
+    where: { slug: decodedSlug }
   })
 
-  if (!project) notFound()
+  // ถ้าหาไม่เจอจริงๆ ให้ลองหาแบบไม่ต้อง decode (เผื่อบางเคส)
+  if (!project) {
+     const fallbackProject = await prisma.project.findUnique({
+        where: { slug: slug }
+     })
+     
+     if (!fallbackProject) {
+        console.error("❌ Project Not Found:", decodedSlug)
+        return notFound()
+     }
+     
+     // ถ้าเจอใน fallback ก็ใช้ตัวนี้แทน
+     return renderProject(fallbackProject)
+  }
 
+  return renderProject(project)
+}
+
+function renderProject(project: any) {
   // --- ส่วนที่ 1: Lock Screen ---
   if (!project.isPublished) {
     return (

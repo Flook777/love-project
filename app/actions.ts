@@ -19,13 +19,23 @@ export async function createProject(formData: FormData) {
     throw new Error("กรุณาใส่ชื่อโปรเจกต์")
   }
 
-  // สร้าง Slug (URL) จากชื่อโปรเจกต์
-  const slug = `${projectName.toLowerCase().trim().replace(/\s+/g, '-')}-${Math.floor(Math.random() * 10000)}`
+  // 🔥 Logic สร้าง Slug ที่ปลอดภัย 100%
+  // 1. เก็บเฉพาะตัวอักษรไทย, อังกฤษ, ตัวเลข
+  const cleanName = projectName.trim().toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F ]/g, "")
+  // 2. เปลี่ยนช่องว่างเป็นขีด
+  const safeName = cleanName.replace(/\s+/g, "-")
+  // 3. เติมเลขสุ่มกันซ้ำ
+  const randomSuffix = Math.floor(Math.random() * 10000)
+  
+  // ถ้าชื่อหายหมด (เช่นใส่แต่ ???) ให้ใช้ชื่อ default
+  const slug = safeName.length > 0 
+    ? `${safeName}-${randomSuffix}` 
+    : `love-project-${randomSuffix}`
 
   const newProject = await prisma.project.create({
     data: {
-      name: projectName,
-      slug: slug,
+      name: projectName, // ชื่อจริง (โชว์ในเว็บ)
+      slug: slug,        // ชื่อใน URL (ปลอดภัย)
       templateId: templateId,
       userId: session.user.id,
       customData: {}, 
@@ -115,7 +125,6 @@ export async function updateProject(formData: FormData) {
   }
 
   try {
-    // 🔥 แก้ไขจุดสำคัญ: ต้องรับค่าที่อัปเดตกลับมา เพื่อเอา slug ไปรีเฟรชหน้าเว็บ
     const updatedProject = await prisma.project.update({
       where: { 
         id: projectId, 
@@ -128,10 +137,8 @@ export async function updateProject(formData: FormData) {
     
     console.log("✅ Project updated:", projectId)
     
-    // รีเฟรชหน้า Editor
     revalidatePath(`/editor/${projectId}`)
-    
-    // 🔥 แก้ไขแล้ว: รีเฟรชหน้าเว็บจริงด้วย Slug ที่ถูกต้อง (ไม่ใช่ ID)
+    // รีเฟรชหน้าเว็บจริงด้วย Slug ที่ถูกต้อง
     revalidatePath(`/p/${updatedProject.slug}`) 
     
   } catch (error) {
