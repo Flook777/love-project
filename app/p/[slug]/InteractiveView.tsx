@@ -3,90 +3,65 @@
 import { useState, useRef, useEffect } from 'react'
 import PhotoGallery from '@/components/PhotoGallery'
 
-// --- 1. Inline Typewriter Component ---
-function TypewriterEffect({ text, speed = 50 }: { text: string, speed?: number }) {
-  const [displayedText, setDisplayedText] = useState("")
-  const [currentIndex, setCurrentIndex] = useState(0)
-
+function TypewriterEffect({ text, speed = 45 }: { text: string; speed?: number }) {
+  const [displayed, setDisplayed] = useState('')
+  const [idx, setIdx] = useState(0)
+  useEffect(() => { setDisplayed(''); setIdx(0) }, [text])
   useEffect(() => {
-    // รีเซ็ตเมื่อข้อความเปลี่ยน
-    setDisplayedText("")
-    setCurrentIndex(0)
-  }, [text])
-
-  useEffect(() => {
-    if (currentIndex < text.length) {
-      const timeoutId = setTimeout(() => {
-        setDisplayedText((prev) => prev + text.charAt(currentIndex))
-        setCurrentIndex((prev) => prev + 1)
+    if (idx < text.length) {
+      const t = setTimeout(() => {
+        setDisplayed(p => p + text[idx])
+        setIdx(p => p + 1)
       }, speed)
-      return () => clearTimeout(timeoutId)
+      return () => clearTimeout(t)
     }
-  }, [currentIndex, text, speed])
-
-  return (
-    <span className="whitespace-pre-line">
-      {displayedText}
-      <span className="animate-pulse text-pink-500">|</span>
-    </span>
-  )
+  }, [idx, text, speed])
+  return <span className="whitespace-pre-line">{displayed}<span className="animate-pulse opacity-60">▋</span></span>
 }
 
-// --- Helper Functions ---
 const getYouTubeId = (url: string) => {
-  if (!url) return null;
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
+  if (!url) return null
+  const m = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/)
+  return m && m[2].length === 11 ? m[2] : null
 }
-
-const getSoundCloudEmbed = (url: string) => {
-  if (url && url.includes("soundcloud.com")) {
-    return `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&color=%23ff5500&auto_play=true&hide_related=true&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=true`;
-  }
-  return null;
-}
-
+const getSoundCloudEmbed = (url: string) =>
+  url?.includes('soundcloud.com')
+    ? `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&color=%23ff5500&auto_play=true&hide_related=true&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=true`
+    : null
 const getSpotifyEmbed = (url: string) => {
-  if (!url) return null;
-  const match = url.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/);
-  if (match) {
-    return `https://open.spotify.com/embed/track/${match[1]}?utm_source=generator&theme=0`;
-  }
-  return null;
-}
-
-// Interface
-interface Heart {
-  left: string;
-  delay: string;
-  duration: string;
-  icon: string;
+  if (!url) return null
+  const m = url.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/)
+  return m ? `https://open.spotify.com/embed/track/${m[1]}?utm_source=generator&theme=0` : null
 }
 
 interface QuizItem {
-  id: string;
-  type: 'text' | 'date' | 'choice';
-  question: string;
-  answer: string;
-  options: string[];
-  explanationImage?: string; // เพิ่มฟิลด์รูปเฉลย
-  explanationText?: string;  // เพิ่มฟิลด์ข้อความเฉลย
+  id: string
+  type: 'text' | 'date' | 'choice'
+  question: string
+  answer: string
+  options: string[]
+  explanationImage?: string
+  explanationText?: string
+}
+
+interface Particle {
+  left: string
+  delay: string
+  duration: string
+  icon: string
+  size: string
 }
 
 export default function InteractiveView({ data }: { data: any }) {
-  // Steps: 0=Envelope, 1=Quizzes, 2=Cover, 3=Message, 4=Gallery
-  const [currentStep, setCurrentStep] = useState(0)
+  const [step, setStep] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
-  const [passcode, setPasscode] = useState("")
+  const [passcode, setPasscode] = useState('')
+  const [flapOpen, setFlapOpen] = useState(false)
+  const [letterRising, setLetterRising] = useState(false)
+  const [particles, setParticles] = useState<Particle[]>([])
   const audioRef = useRef<HTMLAudioElement>(null)
-  
-  // State สำหรับหัวใจ (ป้องกัน Hydration Error)
-  const [hearts, setHearts] = useState<Heart[]>([])
 
-  // Quiz Logic
   const quizzes: QuizItem[] = data.quizzes || []
-  // รองรับข้อมูลเก่า (Backward Compatibility)
   if (quizzes.length === 0 && data.quizQuestion) {
     quizzes.push({
       id: 'legacy',
@@ -94,336 +69,559 @@ export default function InteractiveView({ data }: { data: any }) {
       question: data.quizQuestion,
       answer: data.quizAnswer,
       options: data.quizOptions || [],
-      // map ข้อมูลเก่าเข้า structure ใหม่ (ถ้ามี)
       explanationImage: '',
-      explanationText: ''
+      explanationText: '',
     })
   }
-  const [currentQuizIndex, setCurrentQuizIndex] = useState(0)
-  const [showIntermission, setShowIntermission] = useState(false) // สถานะโชว์หน้าเฉลย
+  const [quizIdx, setQuizIdx] = useState(0)
+  const [showResult, setShowResult] = useState(false)
 
-  const themeColor = data.themeColor || "#ec4899"
-  const fontStyle = data.fontStyle || "font-sans"
-  
+  const accent = data.themeColor || '#ec4899'
+  const fontStyle = data.fontStyle || 'font-sans'
   const youtubeId = getYouTubeId(data.bgMusicUrl)
   const soundcloudUrl = getSoundCloudEmbed(data.bgMusicUrl)
   const spotifyUrl = getSpotifyEmbed(data.bgMusicUrl)
   const startTime = data.musicStart ? parseInt(data.musicStart) : 0
   const endTime = data.musicEnd ? parseInt(data.musicEnd) : 0
-
-  const daysTogether = data.anniversaryDate 
-    ? Math.floor((new Date().getTime() - new Date(data.anniversaryDate).getTime()) / (1000 * 3600 * 24)) 
+  const daysTogether = data.anniversaryDate
+    ? Math.floor((Date.now() - new Date(data.anniversaryDate).getTime()) / 86400000)
     : 0
 
-  // สร้างหัวใจเฉพาะฝั่ง Client (useEffect) เพื่อแก้ Hydration Error
   useEffect(() => {
-    const newHearts = Array.from({ length: 15 }).map(() => ({
-      left: `${Math.floor(Math.random() * 100)}%`,
-      delay: `${Math.random() * 5}s`,
-      duration: `${10 + Math.random() * 10}s`,
-      icon: ['❤️', '💖', '✨', '🌹'][Math.floor(Math.random() * 4)]
-    }))
-    setHearts(newHearts)
+    setParticles(
+      Array.from({ length: 18 }, () => ({
+        left: `${Math.random() * 100}%`,
+        delay: `${Math.random() * 10}s`,
+        duration: `${14 + Math.random() * 12}s`,
+        icon: ['🌸', '✨', '💕', '🌷', '⭐', '💫', '🌼'][Math.floor(Math.random() * 7)],
+        size: `${13 + Math.random() * 10}px`,
+      }))
+    )
   }, [])
 
-  const goToNextStep = () => setCurrentStep(prev => prev + 1)
+  const playMusic = () => {
+    if (!youtubeId && !soundcloudUrl && !spotifyUrl && audioRef.current) {
+      audioRef.current.volume = 0.4
+      audioRef.current.play().catch(() => {})
+    }
+  }
 
   const handleOpenEnvelope = () => {
-    if (isAnimating) return;
-    setIsAnimating(true);
-
-    if (!youtubeId && !soundcloudUrl && !spotifyUrl && audioRef.current) {
-      audioRef.current.volume = 0.5
-      audioRef.current.play().catch(e => console.log("Audio play error:", e))
-    }
-
+    if (isAnimating) return
+    setIsAnimating(true)
+    setFlapOpen(true)
+    setTimeout(() => setLetterRising(true), 350)
     setTimeout(() => {
-      // ถ้ามี Quiz ให้ไปหน้า Quiz (Step 1), ถ้าไม่มีข้ามไป Cover (Step 2)
-      if (quizzes.length > 0) {
-        setCurrentStep(1)
-      } else {
-        setCurrentStep(2)
-      }
-      setIsAnimating(false);
-    }, 2000);
+      playMusic()
+      setStep(quizzes.length > 0 ? 1 : 2)
+      setIsAnimating(false)
+    }, 1800)
   }
 
-  // คำชมสุ่ม (กรณีลูกค้าไม่ได้ใส่ข้อความเฉลยมา)
   const compliments = [
-    "เก่งจังเลยที่รัก! ❤️",
-    "ถูกต้องนะครับคนดี 😘",
-    "จำได้ด้วยเหรอเนี่ย น่ารักที่สุด! 🥰",
-    "เก่งมากครับ! 💖",
-    "อีกนิดเดียวนะ สู้ๆ! ✌️"
-  ];
+    'เก่งจังเลยที่รัก! ❤️',
+    'ถูกต้องแล้วคนดี 😘',
+    'จำได้ด้วย น่ารักที่สุด! 🥰',
+    'เก่งมากเลย! 💖',
+    'ใช่เลย! สู้ๆ นะ ✨',
+  ]
 
   const handleNextQuiz = () => {
-    setShowIntermission(false);
-    if (currentQuizIndex < quizzes.length - 1) {
-      setCurrentQuizIndex(prev => prev + 1)
+    setShowResult(false)
+    if (quizIdx < quizzes.length - 1) {
+      setQuizIdx(p => p + 1)
     } else {
-      goToNextStep() // จบทุกข้อ ไปหน้า Cover
+      setStep(2)
     }
   }
 
-  const checkAnswer = (e: React.FormEvent, selectedOption?: string) => {
+  const checkAnswer = (e: React.FormEvent, selected?: string) => {
     e.preventDefault()
-    const currentQuiz = quizzes[currentQuizIndex]
-    const answerToCheck = selectedOption || passcode
-
-    // ตรวจคำตอบ (Trim ช่องว่างทิ้ง และเทียบ case-insensitive แบบง่ายๆ)
-    if (currentQuiz.answer && answerToCheck.trim().toLowerCase() !== currentQuiz.answer.trim().toLowerCase()) {
-      alert("ผิดนะจ๊ะ ลองใหม่เข๊ะ! 😜")
+    const quiz = quizzes[quizIdx]
+    const ans = selected || passcode
+    if (quiz.answer && ans.trim().toLowerCase() !== quiz.answer.trim().toLowerCase()) {
+      alert('ผิดนะจ๊ะ ลองใหม่เข๊ะ! 😜')
       return
     }
-    
-    setPasscode("") 
-    setShowIntermission(true); // เปิดหน้าเฉลย
+    setPasscode('')
+    setShowResult(true)
   }
 
+  // Shared card styles
+  const card = {
+    background: 'rgba(255,255,255,0.95)',
+    backdropFilter: 'blur(16px)',
+    border: `1px solid ${accent}20`,
+    borderRadius: '1.75rem',
+    boxShadow: '0 8px 40px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)',
+  }
+
+  const btnPrimary = {
+    backgroundColor: accent,
+    color: '#fff',
+    borderRadius: '1rem',
+    fontWeight: 600,
+    padding: '0.875rem 1.5rem',
+    width: '100%',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '1rem',
+    transition: 'transform 0.15s, opacity 0.15s',
+    boxShadow: `0 4px 20px ${accent}50`,
+  } as const
+
+  const stepStyle = (n: number, enterDir: 'up' | 'down' = 'up') => ({
+    opacity: step === n ? 1 : 0,
+    pointerEvents: (step === n ? 'auto' : 'none') as 'auto' | 'none',
+    transform: step === n ? 'none' : step < n
+      ? `translateY(${enterDir === 'up' ? '32px' : '-32px'})`
+      : `translateY(${enterDir === 'up' ? '-32px' : '32px'})`,
+    transition: 'opacity 0.55s ease, transform 0.55s cubic-bezier(0.4, 0, 0.2, 1)',
+  })
+
   return (
-    <div className={`fixed inset-0 overflow-hidden flex flex-col ${fontStyle}`} style={{ background: `linear-gradient(to bottom right, ${themeColor}15, #ffffff, ${themeColor}30)` }}>
-      
-      {/* Music Player */}
-      <div className="absolute top-4 right-4 z-[100]">
-        {youtubeId ? (
-          <div className="opacity-0 pointer-events-none w-1 h-1 overflow-hidden">
-            <iframe width="1" height="1" src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&loop=1&playlist=${youtubeId}&controls=0&start=${startTime}${endTime > 0 ? `&end=${endTime}` : ''}`} title="Music" allow="autoplay; encrypted-media" allowFullScreen />
-          </div>
-        ) : soundcloudUrl ? (
-          <div className={`transition-all duration-500 ${currentStep > 2 ? 'opacity-80 translate-y-0' : 'opacity-0 -translate-y-10'} w-64 h-20 bg-black rounded-xl overflow-hidden shadow-lg`}>
-            <iframe width="100%" height="100%" scrolling="no" frameBorder="no" allow="autoplay" src={soundcloudUrl} />
-          </div>
-        ) : spotifyUrl ? (
-          <div className={`transition-all duration-500 ${currentStep > 2 ? 'opacity-90 translate-y-0' : 'opacity-0 -translate-y-10'} w-64 h-20 bg-black rounded-xl overflow-hidden shadow-lg`}>
-             <iframe style={{ borderRadius: '12px' }} src={spotifyUrl} width="100%" height="100%" frameBorder="0" allowFullScreen allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
-          </div>
-        ) : data.bgMusicUrl && (
-           <audio ref={audioRef} loop controls className={`transition-all duration-500 ${currentStep > 2 ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-10'} h-10 w-32 rounded-full shadow-lg`}>
-              <source src={data.bgMusicUrl} type="audio/mpeg" />
-           </audio>
-        )}
-      </div>
-
-      <div className="flex-1 relative w-full h-full">
-        
-        {/* STEP 0: ENVELOPE (อนิเมชั่นเปิดซอง) */}
-        <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${currentStep === 0 ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
-           <div className="flex flex-col items-center perspective-1000 relative">
-              <div className="relative w-80 h-52 cursor-pointer" onClick={handleOpenEnvelope}>
-                {/* 1. ด้านหลังซอง (ร่วงลง) */}
-                <div className={`absolute inset-0 rounded-b-xl transition-all duration-1000 ease-in-out z-0 ${isAnimating ? 'translate-y-[150%] opacity-0' : ''}`} style={{ backgroundColor: themeColor, filter: 'brightness(0.7)' }}></div>
-                
-                {/* 2. การ์ดจดหมาย (ลอยขึ้น) */}
-                <div className={`absolute left-4 right-4 bg-white shadow-md p-6 text-center transition-all duration-1000 ease-in-out z-10 flex flex-col items-center rounded-lg border border-gray-100 ${isAnimating ? '-translate-y-36 scale-110 opacity-100 shadow-2xl z-50' : 'bottom-2 h-44 justify-center'}`}>
-                   <div className="text-gray-400 text-xs tracking-widest uppercase mb-2">For You</div>
-                   <div className="text-5xl animate-bounce">💌</div>
-                   {isAnimating && <p className="text-xs text-pink-400 mt-4 animate-pulse">กำลังเข้าสู่โลกของเรา...</p>}
-                </div>
-
-                {/* 3. กระเป๋าหน้า (ร่วงลง) */}
-                <div className={`absolute inset-0 z-20 pointer-events-none transition-all duration-1000 ease-in-out ${isAnimating ? 'translate-y-[150%] opacity-0' : ''}`}>
-                    <div className="absolute bottom-0 left-0 w-0 h-0 border-l-[160px] border-t-[100px] border-b-[104px] border-t-transparent border-b-transparent" style={{ borderLeftColor: themeColor, filter: 'brightness(0.9)' }} />
-                    <div className="absolute bottom-0 right-0 w-0 h-0 border-r-[160px] border-t-[100px] border-b-[104px] border-t-transparent border-b-transparent" style={{ borderRightColor: themeColor, filter: 'brightness(0.85)' }} />
-                    <div className="absolute bottom-0 w-0 h-0 border-l-[160px] border-r-[160px] border-b-[110px] border-l-transparent border-r-transparent rounded-b-xl" style={{ borderBottomColor: themeColor, filter: 'brightness(1)' }} />
-                </div>
-
-                {/* 4. ฝาปิด (เปิดแล้วร่วงลง) */}
-                <div className={`absolute top-0 w-0 h-0 border-l-[160px] border-r-[160px] border-t-[110px] border-l-transparent border-r-transparent origin-top transition-all duration-1000 ease-in-out z-30 ${isAnimating ? 'rotate-x-180 translate-y-[150%] opacity-0' : 'z-30'}`} style={{ borderTopColor: themeColor, filter: 'brightness(1.1)' }} />
-              </div>
-              {!isAnimating && <div className="mt-12 text-gray-500 font-medium animate-bounce bg-white/80 px-4 py-2 rounded-full shadow-sm">แตะที่ซองจดหมายเพื่อเปิด ❤️</div>}
-           </div>
-        </div>
-
-        {/* STEP 1: MINIGAME (QUIZZES with INTERMISSION) */}
-        {quizzes.length > 0 && (
-          <div className={`absolute inset-0 flex items-center justify-center p-6 transition-all duration-700 transform ${currentStep === 1 ? 'translate-y-0 opacity-100 z-10' : 'translate-y-full opacity-0 z-0 pointer-events-none'}`}>
-            
-            {/* --- Intermission View (หน้าคั่นเฉลย/คำชม) --- */}
-            {showIntermission ? (
-              <div className="bg-white/95 backdrop-blur-xl p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center border-4 animate-fade-in-up flex flex-col items-center relative overflow-hidden" style={{ borderColor: themeColor }}>
-                
-                {/* Background Pattern */}
-                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)', backgroundSize: '10px 10px' }}></div>
-
-                {/* รูปเฉลย (ถ้ามี) */}
-                {quizzes[currentQuizIndex].explanationImage ? (
-                  <div className="mb-6 rounded-2xl overflow-hidden shadow-lg border-4 border-white w-full aspect-square relative group transform hover:scale-105 transition duration-500">
-                    <img src={quizzes[currentQuizIndex].explanationImage} alt="Reward" className="w-full h-full object-cover" />
-                  </div>
-                ) : (
-                  <div className="text-8xl mb-6 animate-bounce drop-shadow-md">
-                    {['🥰', '😍', '😘', '💖', '🎉'][currentQuizIndex % 5]}
-                  </div>
-                )}
-
-                <h2 className="text-xl font-bold text-gray-800 mb-2 leading-relaxed" style={{ color: themeColor }}>
-                  {/* แสดงข้อความเฉลยจากลูกค้า หรือคำชมสุ่ม */}
-                  {quizzes[currentQuizIndex].explanationText || compliments[currentQuizIndex % compliments.length]}
-                </h2>
-                
-                <p className="text-gray-400 mb-8 text-xs font-medium tracking-wide uppercase">
-                   {currentQuizIndex < quizzes.length - 1 ? "Next Question" : "Surprise is waiting!"}
-                </p>
-
-                <button 
-                  onClick={handleNextQuiz}
-                  className="w-full text-white px-8 py-3 rounded-full shadow-lg font-bold hover:scale-105 transition transform active:scale-95"
-                  style={{ backgroundColor: themeColor }}
-                >
-                  {currentQuizIndex < quizzes.length - 1 ? "ไปข้อต่อไป ➡️" : "ดูเซอร์ไพรส์ 🎉"}
-                </button>
-              </div>
-            ) : (
-              /* --- Quiz Question View --- */
-              <div className="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center border-4 relative" style={{ borderColor: themeColor }}>
-                
-                {/* Pagination */}
-                <div className="absolute top-4 right-4 flex gap-1">
-                  {quizzes.map((_, i) => (
-                    <div key={i} className={`w-2 h-2 rounded-full transition-all ${i === currentQuizIndex ? 'w-4' : ''}`} style={{ backgroundColor: i === currentQuizIndex ? themeColor : '#d1d5db' }} />
-                  ))}
-                </div>
-
-                <div className="text-6xl mb-4 animate-bounce">🤔</div>
-                <h2 className="text-xl font-bold text-gray-800 mt-2">คำถามข้อที่ {currentQuizIndex + 1}</h2>
-                <p className="text-gray-600 mb-6 font-medium mt-2 text-lg">"{quizzes[currentQuizIndex].question}"</p>
-                
-                <form onSubmit={(e) => checkAnswer(e)} className="space-y-4">
-                  {quizzes[currentQuizIndex].type === 'choice' && Array.isArray(quizzes[currentQuizIndex].options) ? (
-                    <div className="grid grid-cols-1 gap-3">
-                      {quizzes[currentQuizIndex].options.map((option, idx) => (
-                        option && (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={(e) => checkAnswer(e, option)} // คลิกแล้วตอบเลย
-                            className="w-full py-3 px-4 rounded-xl border-2 transition-all font-medium text-lg bg-white text-gray-700 border-gray-200 hover:border-pink-300 hover:bg-pink-50 active:scale-95 shadow-sm hover:shadow-md"
-                          >
-                            {option}
-                          </button>
-                        )
-                      ))}
-                    </div>
-                  ) : quizzes[currentQuizIndex].type === 'date' ? (
-                    <>
-                      <input 
-                        type="date" 
-                        className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg font-bold shadow-sm"
-                        style={{ borderColor: `${themeColor}60` }}
-                        value={passcode}
-                        onChange={(e) => setPasscode(e.target.value)}
-                        required
-                      />
-                      <button type="submit" disabled={!passcode} className="w-full text-white font-bold py-3 rounded-xl shadow-lg transition transform active:scale-95 text-lg mt-2" style={{ backgroundColor: themeColor }}>ตอบเลย 💘</button>
-                    </>
-                  ) : (
-                    <>
-                      <input 
-                        type="text" 
-                        className="w-full px-4 py-3 text-center border-2 rounded-xl outline-none text-black transition focus:scale-105 bg-gray-50 text-lg shadow-sm"
-                        style={{ borderColor: `${themeColor}60` }}
-                        placeholder="ใส่คำตอบที่นี่..."
-                        value={passcode}
-                        onChange={(e) => setPasscode(e.target.value)}
-                        autoFocus
-                        required
-                      />
-                      <button type="submit" disabled={!passcode} className="w-full text-white font-bold py-3 rounded-xl shadow-lg transition transform active:scale-95 text-lg mt-2" style={{ backgroundColor: themeColor }}>ตอบเลย 💘</button>
-                    </>
-                  )}
-                </form>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* STEP 2: COVER PAGE */}
-        <div className={`absolute inset-0 flex flex-col items-center justify-center p-6 transition-all duration-700 transform ${currentStep === 2 ? 'translate-y-0 opacity-100 z-10' : currentStep > 2 ? '-translate-y-full opacity-0' : 'translate-y-full opacity-0 pointer-events-none'}`}>
-           <div className="w-full max-w-md bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-2xl overflow-hidden border border-white p-4">
-              <div className="relative aspect-[4/5] rounded-xl overflow-hidden shadow-inner bg-gray-100">
-                {data.imageUrl ? (
-                  <img src={data.imageUrl} alt="Cover" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-4xl">🖼️</div>
-                )}
-                {data.anniversaryDate && (
-                  <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md text-white px-4 py-1 rounded-full text-sm font-bold shadow-lg border border-white/20">
-                    🗓️ คบกันมา {daysTogether} วันแล้ว
-                  </div>
-                )}
-              </div>
-              <div className="text-center pt-6 pb-2">
-                 <h1 className="text-3xl font-bold leading-tight" style={{ color: themeColor }}>
-                    {data.title || "Happy Anniversary"}
-                 </h1>
-                 <p className="text-gray-400 text-sm mt-2">แตะปุ่มด้านล่างเพื่อไปต่อ</p>
-              </div>
-           </div>
-           
-           <button onClick={goToNextStep} className="mt-8 animate-bounce bg-white text-gray-800 p-4 rounded-full shadow-lg hover:scale-110 transition">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-              </svg>
-           </button>
-        </div>
-
-        {/* STEP 3: MESSAGE PAGE */}
-        <div className={`absolute inset-0 flex flex-col items-center justify-center p-6 transition-all duration-700 transform ${currentStep === 3 ? 'translate-y-0 opacity-100 z-10' : currentStep > 3 ? '-translate-y-full opacity-0' : 'translate-y-full opacity-0 pointer-events-none'}`}>
-           <div className="w-full max-w-md bg-white/90 backdrop-blur-xl rounded-[2rem] shadow-2xl p-8 relative border border-white/60 min-h-[50vh] flex flex-col">
-              <div className="absolute -top-6 right-6 bg-white p-3 rounded-full shadow-lg text-3xl" style={{ color: themeColor }}>💌</div>
-              <div className="flex-1 overflow-y-auto mb-4">
-                <div className="text-gray-800 text-lg leading-loose font-medium">
-                  {currentStep === 3 && ( 
-                    data.useTypingEffect ? (
-                      <TypewriterEffect text={data.message || "..."} speed={50} />
-                    ) : (
-                      <p className="whitespace-pre-line">{data.message}</p>
-                    )
-                  )}
-                </div>
-              </div>
-              <div className="text-center pt-4 border-t border-gray-100">
-                 <div className="text-2xl animate-pulse" style={{ color: themeColor }}>💖</div>
-              </div>
-           </div>
-           {data.gallery && data.gallery.length > 0 && (
-             <button onClick={goToNextStep} className="mt-8 bg-white text-gray-800 px-6 py-3 rounded-full shadow-lg hover:scale-105 transition font-bold flex items-center gap-2">
-                ดูรูปของเรา <span className="text-xl">📸</span>
-             </button>
-           )}
-        </div>
-
-        {/* STEP 4: GALLERY PAGE */}
-        {data.gallery && data.gallery.length > 0 && (
-          <div className={`absolute inset-0 flex flex-col items-center justify-center p-6 transition-all duration-700 transform ${currentStep === 4 ? 'translate-y-0 opacity-100 z-10' : 'translate-y-full opacity-0 pointer-events-none'}`}>
-             <div className="w-full max-w-md text-center">
-                <h2 className="text-2xl font-bold text-white mb-6 drop-shadow-md">📸 ความทรงจำของเรา</h2>
-                <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-xl">
-                   <PhotoGallery images={data.gallery} />
-                </div>
-                <button onClick={() => setCurrentStep(2)} className="mt-8 text-white/80 hover:text-white underline text-sm">กลับไปอ่านใหม่อีกรอบ</button>
-             </div>
-          </div>
-        )}
-
-      </div>
-
-      <div className="absolute inset-0 pointer-events-none z-0">
-        {hearts.map((h, i) => (
-          <div key={i} className="absolute opacity-40 animate-float" style={{ left: h.left, animationDelay: h.delay, animationDuration: h.duration, bottom: '-10%', color: themeColor, fontSize: '24px' }}>
-            {h.icon}
-          </div>
+    <div
+      className={`fixed inset-0 overflow-hidden ${fontStyle}`}
+      style={{
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        background: `linear-gradient(150deg, ${accent}12 0%, #fdf8ff 45%, ${accent}08 80%, #fff5f7 100%)`,
+      }}
+    >
+      {/* Floating particles */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
+        {particles.map((p, i) => (
+          <span
+            key={i}
+            className="absolute iv-particle select-none"
+            style={{ left: p.left, bottom: '-4%', fontSize: p.size, animationDelay: p.delay, animationDuration: p.duration }}
+          >
+            {p.icon}
+          </span>
         ))}
       </div>
 
+      {/* Music player */}
+      <div
+        className="absolute top-4 right-4"
+        style={{ zIndex: 50, transition: 'opacity 0.6s', opacity: step > 1 ? 1 : 0, pointerEvents: step > 1 ? 'auto' : 'none' }}
+      >
+        {youtubeId ? (
+          <div className="sr-only">
+            <iframe
+              width="1" height="1"
+              src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&loop=1&playlist=${youtubeId}&controls=0&start=${startTime}${endTime > 0 ? `&end=${endTime}` : ''}`}
+              title="bg" allow="autoplay; encrypted-media"
+            />
+          </div>
+        ) : soundcloudUrl ? (
+          <div style={{ width: 220, height: 60, borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' }}>
+            <iframe width="100%" height="100%" scrolling="no" frameBorder="no" allow="autoplay" src={soundcloudUrl} />
+          </div>
+        ) : spotifyUrl ? (
+          <div style={{ width: 220, height: 60, borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' }}>
+            <iframe src={spotifyUrl} width="100%" height="100%" frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" />
+          </div>
+        ) : data.bgMusicUrl ? (
+          <audio ref={audioRef} loop className="w-28 h-8" style={{ borderRadius: 999 }}>
+            <source src={data.bgMusicUrl} type="audio/mpeg" />
+          </audio>
+        ) : null}
+      </div>
+
+      {/* ── STEP 0: ENVELOPE ── */}
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center px-6"
+        style={{ zIndex: 10, ...stepStyle(0) }}
+      >
+        <div className="flex flex-col items-center" style={{ gap: '2rem' }}>
+          {/* Eyebrow + title */}
+          <div className="text-center">
+            <p style={{ fontSize: '0.65rem', letterSpacing: '0.25em', textTransform: 'uppercase', color: `${accent}99`, marginBottom: '0.5rem', fontWeight: 500 }}>
+              a surprise for you ✨
+            </p>
+            <h1 className="iv-display" style={{ fontSize: 'clamp(1.5rem, 6vw, 2.25rem)', color: '#3d2c35', lineHeight: 1.2, textAlign: 'center' }}>
+              {data.title || 'มีซัมซิ่งให้นายหน่อยนึง'}
+            </h1>
+          </div>
+
+          {/* Envelope */}
+          <button
+            onClick={handleOpenEnvelope}
+            disabled={isAnimating}
+            style={{ background: 'none', border: 'none', cursor: isAnimating ? 'default' : 'pointer', padding: 0 }}
+            aria-label="เปิดซอง"
+          >
+            <div
+              className="iv-envelope-shadow"
+              style={{
+                position: 'relative',
+                width: 'min(300px, 78vw)',
+                height: 'min(210px, 54vw)',
+                borderRadius: '1.25rem',
+                overflow: 'hidden',
+                backgroundColor: accent,
+              }}
+            >
+              {/* Envelope body shading */}
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.06)', zIndex: 1 }} />
+
+              {/* Side fold triangles */}
+              <div style={{
+                position: 'absolute', bottom: 0, left: 0, zIndex: 2,
+                width: 0, height: 0,
+                borderStyle: 'solid',
+                borderWidth: '0 0 105px 150px',
+                borderColor: `transparent transparent rgba(0,0,0,0.1) transparent`,
+              }} />
+              <div style={{
+                position: 'absolute', bottom: 0, right: 0, zIndex: 2,
+                width: 0, height: 0,
+                borderStyle: 'solid',
+                borderWidth: '0 150px 105px 0',
+                borderColor: `transparent rgba(0,0,0,0.1) transparent transparent`,
+              }} />
+
+              {/* Letter card that rises out */}
+              <div style={{
+                position: 'absolute',
+                left: '10%', right: '10%',
+                bottom: '6px',
+                height: '72%',
+                background: '#fff',
+                borderRadius: '0.75rem',
+                zIndex: 3,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+                transform: letterRising ? 'translateY(-58%)' : 'translateY(0)',
+                transition: 'transform 0.75s cubic-bezier(0.34, 1.05, 0.64, 1)',
+              }}>
+                <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c4b0bb', marginBottom: '0.5rem' }}>For You</p>
+                <span style={{ fontSize: '2.5rem' }}>💌</span>
+                {letterRising && (
+                  <p style={{ fontSize: '0.65rem', color: accent, marginTop: '0.5rem', animation: 'pulse 1.5s infinite' }}>กำลังเข้าสู่โลกของเรา...</p>
+                )}
+              </div>
+
+              {/* Flap — sits on top, rotates open */}
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0,
+                height: '52%',
+                zIndex: 4,
+                transformOrigin: 'top center',
+                transform: flapOpen ? 'perspective(500px) rotateX(-170deg)' : 'perspective(500px) rotateX(0deg)',
+                transition: 'transform 0.55s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}>
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  clipPath: 'polygon(0 0, 100% 0, 50% 100%)',
+                  backgroundColor: accent,
+                  filter: 'brightness(1.12)',
+                }} />
+              </div>
+            </div>
+          </button>
+
+          {/* Hint */}
+          {!isAnimating && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem' }}>
+              <div
+                className="iv-bounce"
+                style={{
+                  width: 36, height: 36,
+                  borderRadius: '50%',
+                  backgroundColor: `${accent}15`,
+                  border: `1.5px solid ${accent}35`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: accent, fontSize: '1rem',
+                }}
+              >
+                ↑
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#9d8090', letterSpacing: '0.04em' }}>แตะซองเพื่อเปิด</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── STEP 1: QUIZ ── */}
+      {quizzes.length > 0 && (
+        <div
+          className="absolute inset-0 flex items-center justify-center p-5"
+          style={{ zIndex: 10, ...stepStyle(1) }}
+        >
+          {showResult ? (
+            <div className="w-full iv-scale-in" style={{ maxWidth: 360 }}>
+              <div style={card} className="p-8 text-center">
+                {quizzes[quizIdx].explanationImage ? (
+                  <div style={{ borderRadius: '1rem', overflow: 'hidden', marginBottom: '1.5rem', aspectRatio: '1/1' }}>
+                    <img src={quizzes[quizIdx].explanationImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                ) : (
+                  <div className="iv-bounce" style={{ fontSize: '4rem', marginBottom: '1rem' }}>
+                    {['🥰', '😍', '😘', '💖', '🎉'][quizIdx % 5]}
+                  </div>
+                )}
+                <h2
+                  className="iv-display"
+                  style={{ fontSize: '1.35rem', color: accent, marginBottom: '0.4rem', lineHeight: 1.4 }}
+                >
+                  {quizzes[quizIdx].explanationText || compliments[quizIdx % compliments.length]}
+                </h2>
+                <p style={{ fontSize: '0.7rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#bbb', marginBottom: '1.5rem' }}>
+                  {quizIdx < quizzes.length - 1 ? `ข้อ ${quizIdx + 1} / ${quizzes.length}` : 'ผ่านทุกข้อแล้ว! 🎉'}
+                </p>
+                <button style={btnPrimary} onClick={handleNextQuiz}>
+                  {quizIdx < quizzes.length - 1 ? 'ข้อต่อไป →' : 'ดูเซอร์ไพรส์ ✨'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="w-full iv-fade-up" style={{ maxWidth: 360 }}>
+              <div style={card} className="p-8">
+                {/* Progress bar */}
+                <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center', marginBottom: '1.5rem' }}>
+                  {quizzes.map((_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        height: 4, borderRadius: 99,
+                        width: i === quizIdx ? 28 : 6,
+                        backgroundColor: i === quizIdx ? accent : `${accent}25`,
+                        transition: 'width 0.3s, background-color 0.3s',
+                      }}
+                    />
+                  ))}
+                </div>
+
+                <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#bbb', textAlign: 'center', marginBottom: '0.5rem' }}>
+                  ข้อที่ {quizIdx + 1}
+                </p>
+                <h2
+                  className="iv-display"
+                  style={{ fontSize: '1.25rem', color: '#3d2c35', textAlign: 'center', marginBottom: '1.5rem', lineHeight: 1.5 }}
+                >
+                  "{quizzes[quizIdx].question}"
+                </h2>
+
+                <form onSubmit={checkAnswer} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  {quizzes[quizIdx].type === 'choice' && Array.isArray(quizzes[quizIdx].options)
+                    ? quizzes[quizIdx].options.filter(Boolean).map((opt, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={e => checkAnswer(e, opt)}
+                          style={{
+                            textAlign: 'left',
+                            padding: '0.8rem 1rem',
+                            borderRadius: '0.875rem',
+                            border: `1.5px solid ${accent}20`,
+                            background: '#fff',
+                            color: '#4a3540',
+                            fontSize: '0.95rem',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            transition: 'border-color 0.2s, background 0.2s',
+                          }}
+                          onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = `${accent}60`; (e.target as HTMLElement).style.background = `${accent}08` }}
+                          onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = `${accent}20`; (e.target as HTMLElement).style.background = '#fff' }}
+                        >
+                          {opt}
+                        </button>
+                      ))
+                    : quizzes[quizIdx].type === 'date'
+                    ? (
+                      <>
+                        <input
+                          type="date"
+                          style={{ padding: '0.8rem', borderRadius: '0.875rem', border: `1.5px solid ${accent}35`, textAlign: 'center', fontSize: '1rem', color: '#3d2c35', background: '#fafafa', outline: 'none', width: '100%' }}
+                          value={passcode}
+                          onChange={e => setPasscode(e.target.value)}
+                          required
+                        />
+                        <button type="submit" disabled={!passcode} style={{ ...btnPrimary, opacity: passcode ? 1 : 0.5 }}>ตอบเลย 💘</button>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          style={{ padding: '0.8rem', borderRadius: '0.875rem', border: `1.5px solid ${accent}35`, textAlign: 'center', fontSize: '1rem', color: '#3d2c35', background: '#fafafa', outline: 'none', width: '100%' }}
+                          placeholder="ใส่คำตอบ..."
+                          value={passcode}
+                          onChange={e => setPasscode(e.target.value)}
+                          autoFocus
+                          required
+                        />
+                        <button type="submit" disabled={!passcode} style={{ ...btnPrimary, opacity: passcode ? 1 : 0.5 }}>ตอบเลย 💘</button>
+                      </>
+                    )
+                  }
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── STEP 2: COVER ── */}
+      <div
+        className="absolute inset-0 flex items-center justify-center p-5"
+        style={{ zIndex: 10, ...stepStyle(2) }}
+      >
+        <div style={{ width: '100%', maxWidth: 360 }}>
+          <div style={{ position: 'relative', borderRadius: '1.75rem', overflow: 'hidden', boxShadow: '0 16px 56px rgba(0,0,0,0.12)', aspectRatio: '3/4', marginBottom: '1rem' }}>
+            {data.imageUrl ? (
+              <img src={data.imageUrl} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '4rem', background: `${accent}12` }}>🖼️</div>
+            )}
+            {/* gradient overlay */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: `linear-gradient(to top, ${accent}dd 0%, ${accent}44 40%, transparent 65%)`,
+            }} />
+            {/* text on photo */}
+            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '1.25rem 1.5rem', color: '#fff' }}>
+              <h1 className="iv-display" style={{ fontSize: 'clamp(1.4rem, 5vw, 2rem)', lineHeight: 1.25, textShadow: '0 2px 12px rgba(0,0,0,0.2)' }}>
+                {data.title || 'Happy Anniversary 🌹'}
+              </h1>
+              {data.anniversaryDate && (
+                <p style={{ fontSize: '0.8rem', marginTop: '0.3rem', opacity: 0.85, fontWeight: 500 }}>
+                  🗓️ {daysTogether} วันที่เรามีกัน
+                </p>
+              )}
+            </div>
+          </div>
+          <button style={btnPrimary} onClick={() => setStep(3)}>
+            อ่านจดหมาย 💌
+          </button>
+        </div>
+      </div>
+
+      {/* ── STEP 3: MESSAGE ── */}
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center p-5"
+        style={{ zIndex: 10, ...stepStyle(3) }}
+      >
+        <div style={{ width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', maxHeight: '88vh' }}>
+          {/* Header pill */}
+          <div style={{ textAlign: 'center', marginBottom: '0.875rem' }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+              background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)',
+              padding: '0.4rem 1rem', borderRadius: 999,
+              boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+              fontSize: '0.8rem', color: '#9d8090',
+            }}>
+              <span style={{ color: accent }}>💌</span>
+              จดหมายถึงคุณ
+            </span>
+          </div>
+
+          {/* Message card */}
+          <div style={{ ...card, padding: '1.75rem', flex: 1, overflowY: 'auto', minHeight: 0 }}>
+            <div style={{ fontSize: '1.05rem', lineHeight: 1.9, color: '#4a3540', fontWeight: 400 }}>
+              {step === 3 && (
+                data.useTypingEffect
+                  ? <TypewriterEffect text={data.message || '...'} speed={40} />
+                  : <p className="whitespace-pre-line">{data.message}</p>
+              )}
+            </div>
+            <div style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '1.4rem', color: accent, animation: 'pulse 2s infinite' }}>
+              💖
+            </div>
+          </div>
+
+          {/* Next */}
+          <div style={{ marginTop: '0.875rem' }}>
+            {data.gallery?.length > 0 ? (
+              <button style={btnPrimary} onClick={() => setStep(4)}>
+                ดูรูปของเรา 📸
+              </button>
+            ) : (
+              <button
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '1rem', border: `1.5px solid ${accent}25`, background: 'transparent', color: '#9d8090', fontSize: '0.875rem', cursor: 'pointer' }}
+                onClick={() => setStep(2)}
+              >
+                ← กลับไปหน้าปก
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── STEP 4: GALLERY ── */}
+      {data.gallery?.length > 0 && (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-start p-5 overflow-y-auto"
+          style={{ zIndex: 10, paddingTop: '2rem', ...stepStyle(4) }}
+        >
+          <div style={{ width: '100%', maxWidth: 380 }}>
+            <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+              <h2 className="iv-display" style={{ fontSize: '1.75rem', color: '#3d2c35' }}>
+                ความทรงจำของเรา
+              </h2>
+              <p style={{ fontSize: '0.8rem', color: '#bbb', marginTop: '0.25rem' }}>
+                📸 {data.gallery.length} รูป
+              </p>
+            </div>
+            <div style={{ ...card, padding: '1rem' }}>
+              <PhotoGallery images={data.gallery} />
+            </div>
+            <button
+              style={{ width: '100%', marginTop: '1rem', padding: '0.75rem', borderRadius: '1rem', border: `1.5px solid ${accent}25`, background: 'transparent', color: '#9d8090', fontSize: '0.875rem', cursor: 'pointer' }}
+              onClick={() => setStep(3)}
+            >
+              ← กลับไปอ่านจดหมาย
+            </button>
+          </div>
+        </div>
+      )}
+
       <style jsx global>{`
-        .perspective-1000 { perspective: 1000px; }
-        .rotate-x-180 { transform: rotateX(180deg); }
-        @keyframes float { 0% { transform: translateY(0) rotate(0deg); opacity: 0; } 10% { opacity: 0.6; } 100% { transform: translateY(-120vh) rotate(360deg); opacity: 0; } }
-        .animate-float { animation-name: float; animation-timing-function: linear; animation-iteration-count: infinite; }
-        .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
+
+        .iv-display { font-family: 'DM Serif Display', Georgia, serif; }
+
+        @keyframes iv-particle {
+          0%   { transform: translateY(0) rotate(0deg) scale(0.6); opacity: 0; }
+          8%   { opacity: 0.9; transform: translateY(-8vh) rotate(25deg) scale(1); }
+          88%  { opacity: 0.4; }
+          100% { transform: translateY(-108vh) rotate(700deg) scale(0.5); opacity: 0; }
+        }
+        .iv-particle {
+          animation-name: iv-particle;
+          animation-timing-function: ease-out;
+          animation-iteration-count: infinite;
+        }
+
+        @keyframes iv-bounce {
+          0%, 100% { transform: translateY(0); }
+          50%       { transform: translateY(-8px); }
+        }
+        .iv-bounce { animation: iv-bounce 1.8s ease-in-out infinite; }
+
+        @keyframes iv-fade-up {
+          from { opacity: 0; transform: translateY(20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .iv-fade-up { animation: iv-fade-up 0.45s ease-out both; }
+
+        @keyframes iv-scale-in {
+          from { opacity: 0; transform: scale(0.92); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        .iv-scale-in { animation: iv-scale-in 0.4s cubic-bezier(0.34, 1.3, 0.64, 1) both; }
+
+        .iv-envelope-shadow {
+          filter: drop-shadow(0 16px 40px rgba(0,0,0,0.12)) drop-shadow(0 4px 12px rgba(0,0,0,0.08));
+          transition: transform 0.3s cubic-bezier(0.34, 1.4, 0.64, 1);
+        }
+        .iv-envelope-shadow:hover { transform: scale(1.03) translateY(-4px); }
+        .iv-envelope-shadow:active { transform: scale(0.97); }
       `}</style>
     </div>
   )
