@@ -1,573 +1,488 @@
 'use client'
 
-import { useState, useTransition, ChangeEvent } from 'react'
-import UploadButton from '@/components/UploadButton'
-import ImageCropper from '@/components/ImageCropper'
+import { useState } from "react"
+import { useForm, useFieldArray, Controller, FormProvider, useFormContext } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
+import { useRouter } from "next/navigation"
+import Image from "next/image"
+import Link from "next/link"
+import { updateProject, uploadImage } from "@/app/actions"
 
-// --- Helper Functions ---
-const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
+// --- Schema ---
+const QuizSchema = z.object({
+  id: z.string(),
+  type: z.enum(['text', 'date', 'choice']),
+  question: z.string(),
+  answer: z.string(),
+  options: z.array(z.string()),
+  explanationImage: z.string().optional(),
+  explanationText: z.string().optional(),
+})
 
-const fileToBase64 = blobToBase64; 
+const FormSchema = z.object({
+  name: z.string().min(1, "ชื่อโปรเจกต์ต้องใส่"),
+  slug: z.string().min(3, "Slug ต้องมีอย่างน้อย 3 ตัว").regex(/^[a-z0-9-]+$/, "ใช้ได้แค่ a-z, 0-9 และ -"),
+  isPublished: z.boolean(),
+  customData: z.object({
+    coverTitle: z.string(),
+    imageUrl: z.string(),
+    message: z.string(),
+    useTypingEffect: z.boolean(),
+    gallery: z.array(z.string()),
+    themeColor: z.string(),
+    fontStyle: z.string(),
+    anniversaryDate: z.string(),
+    bgMusicUrl: z.string(),
+    musicStart: z.string(),
+    musicEnd: z.string(),
+    quizzes: z.array(QuizSchema),
+  }),
+})
 
-// ฟังก์ชันอัปโหลด (ใช้ Base64 เพื่อความชัวร์)
-const uploadToCloudinary = async (blob: Blob) => {
-  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
-  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+type FormValues = z.infer<typeof FormSchema>
 
-  if (!uploadPreset || !cloudName) throw new Error("ไม่พบค่า Cloudinary Config ใน .env")
+interface Project {
+  id: string
+  name: string
+  slug: string
+  isPublished: boolean
+  templateId: string
+  customData: Record<string, unknown> | null
+}
 
-  const base64Data = await blobToBase64(blob);
-  const formData = new FormData()
-  formData.append('file', base64Data)
-  formData.append('upload_preset', uploadPreset)
+const input = "w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-pink-400 transition"
 
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-    { method: 'POST', body: formData }
+export default function EditorForm({ project }: { project: Project }) {
+  const router = useRouter()
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [uploadingField, setUploadingField] = useState<string | null>(null)
+
+  const cd = (project.customData ?? {}) as Record<string, unknown>
+
+  const methods = useForm<FormValues>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(FormSchema) as any,
+    defaultValues: {
+      name: project.name,
+      slug: project.slug,
+      isPublished: project.isPublished,
+      customData: {
+        coverTitle: (cd.coverTitle as string) ?? "",
+        imageUrl: (cd.imageUrl as string) ?? "",
+        message: (cd.message as string) ?? "",
+        useTypingEffect: (cd.useTypingEffect as boolean) ?? false,
+        gallery: (cd.gallery as string[]) ?? [],
+        themeColor: (cd.themeColor as string) ?? "#ec4899",
+        fontStyle: (cd.fontStyle as string) ?? "font-sans",
+        anniversaryDate: (cd.anniversaryDate as string) ?? "",
+        bgMusicUrl: (cd.bgMusicUrl as string) ?? "",
+        musicStart: (cd.musicStart as string) ?? "",
+        musicEnd: (cd.musicEnd as string) ?? "",
+        quizzes: (cd.quizzes as FormValues['customData']['quizzes']) ?? [],
+      }
+    }
+  })
+
+  const { register, control, handleSubmit, setValue, watch, formState: { errors, isDirty } } = methods
+
+  const gallery = watch("customData.gallery")
+  const themeColor = watch("customData.themeColor") ?? "#ec4899"
+
+  const onSubmit = async (data: FormValues) => {
+    setIsSaving(true)
+    setSaveError(null)
+    setSaveSuccess(false)
+    try {
+      const result = await updateProject(project.id, data)
+      if (result.error) {
+        setSaveError(typeof result.error === 'string' ? result.error : "Validation ไม่ผ่าน")
+      } else {
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 3000)
+        router.refresh()
+      }
+    } catch {
+      setSaveError("เกิดข้อผิดพลาด กรุณาลองใหม่")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleUpload = async (file: File, onSuccess: (url: string) => void) => {
+    const fd = new FormData()
+    fd.append("file", file)
+    const res = await uploadImage(fd)
+    if (res.success && res.url) {
+      onSuccess(res.url)
+    } else {
+      alert(res.error ?? "อัปโหลดไม่สำเร็จ")
+    }
+  }
+
+  return (
+    <FormProvider {...methods}>
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-rose-50">
+        <form onSubmit={handleSubmit(onSubmit as never)}>
+
+          {/* Sticky Header */}
+          <div className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-pink-100 shadow-sm">
+            <div className="max-w-3xl mx-auto px-6 py-3 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <Link href="/dashboard" className="text-gray-400 hover:text-gray-600 text-sm">← กลับ</Link>
+                <span className="text-gray-300">|</span>
+                <h2 className="text-base font-bold text-gray-700 truncate max-w-[200px]">{watch("name")}</h2>
+              </div>
+              <div className="flex items-center gap-3">
+                {saveSuccess && <span className="text-green-500 text-sm animate-pulse">บันทึกแล้ว ✓</span>}
+                {saveError && <span className="text-red-500 text-sm">{saveError}</span>}
+                <Link
+                  href={`/p/${watch("slug")}`}
+                  target="_blank"
+                  className="px-3 py-2 rounded-lg text-sm font-medium bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 transition"
+                >
+                  👁️ Preview
+                </Link>
+                <button
+                  type="submit"
+                  disabled={isSaving || !isDirty}
+                  className={`px-5 py-2 rounded-lg font-bold text-sm transition ${
+                    isSaving ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : isDirty ? "bg-pink-500 hover:bg-pink-600 text-white shadow-md"
+                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  }`}
+                >
+                  {isSaving ? "กำลังบันทึก..." : "บันทึก"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
+
+            {/* ── Section 1: ข้อมูลพื้นฐาน ── */}
+            <Section title="📋 ข้อมูลพื้นฐาน">
+              <div className="grid md:grid-cols-2 gap-4">
+                <Field label="ชื่อโปรเจกต์ (ใช้ใน Dashboard)" error={errors.name?.message}>
+                  <input {...register("name")} className={input} placeholder="วันครบรอบของเรา" />
+                </Field>
+                <Field label="URL Slug (/p/...)" error={errors.slug?.message}>
+                  <input {...register("slug")} className={`${input} font-mono text-sm`} placeholder="our-anniversary" />
+                </Field>
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer mt-1">
+                <Controller
+                  control={control}
+                  name="isPublished"
+                  render={({ field }) => (
+                    <input type="checkbox" checked={field.value} onChange={e => field.onChange(e.target.checked)}
+                      className="w-5 h-5 rounded accent-pink-500" />
+                  )}
+                />
+                <span className="text-sm font-medium text-gray-700">เผยแพร่ (ให้คนอื่นเข้าดูได้)</span>
+              </label>
+            </Section>
+
+            {/* ── Section 2: ธีมและหน้าปก ── */}
+            <Section title="🎨 ธีมและหน้าปก">
+              <div className="grid md:grid-cols-2 gap-4">
+                <Field label="ชื่อที่แสดงบนหน้าปก">
+                  <input {...register("customData.coverTitle")} className={input} placeholder="Happy Anniversary 💖" />
+                </Field>
+                <Field label="สีธีม">
+                  <div className="flex items-center gap-3">
+                    <Controller
+                      control={control}
+                      name="customData.themeColor"
+                      render={({ field }) => (
+                        <input type="color" value={field.value ?? "#ec4899"} onChange={e => field.onChange(e.target.value)}
+                          className="w-12 h-10 rounded-lg border border-gray-200 cursor-pointer p-1" />
+                      )}
+                    />
+                    <span className="text-sm font-mono text-gray-500">{themeColor}</span>
+                  </div>
+                </Field>
+                <Field label="ฟอนต์">
+                  <select {...register("customData.fontStyle")} className={input}>
+                    <option value="font-sans">Sans Serif (ทั่วไป)</option>
+                    <option value="font-serif">Serif (คลาสสิก)</option>
+                    <option value="font-mono">Monospace</option>
+                  </select>
+                </Field>
+                <Field label="วันที่เริ่มคบ (นับวัน)">
+                  <input type="date" {...register("customData.anniversaryDate")} className={input} />
+                </Field>
+              </div>
+              <Field label="รูปหน้าปก">
+                <ImageUploader
+                  currentUrl={watch("customData.imageUrl") ?? ""}
+                  fieldKey="coverImage"
+                  uploadingField={uploadingField}
+                  setUploadingField={setUploadingField}
+                  onUpload={(file) => handleUpload(file, (url) => setValue("customData.imageUrl", url, { shouldDirty: true }))}
+                  onRemove={() => setValue("customData.imageUrl", "", { shouldDirty: true })}
+                />
+              </Field>
+            </Section>
+
+            {/* ── Section 3: ข้อความ ── */}
+            <Section title="💌 ข้อความในซอง">
+              <Field label="ข้อความหลัก (จดหมายความรัก)">
+                <textarea
+                  {...register("customData.message")}
+                  className={`${input} min-h-[160px] resize-y`}
+                  placeholder="เขียนบอกรักได้เลยเลย..."
+                />
+              </Field>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <Controller
+                  control={control}
+                  name="customData.useTypingEffect"
+                  render={({ field }) => (
+                    <input type="checkbox" checked={field.value ?? false} onChange={e => field.onChange(e.target.checked)}
+                      className="w-5 h-5 rounded accent-pink-500" />
+                  )}
+                />
+                <span className="text-sm text-gray-700">แสดงข้อความแบบ Typewriter (พิมพ์ทีละตัว)</span>
+              </label>
+            </Section>
+
+            {/* ── Section 4: เพลง ── */}
+            <Section title="🎵 เพลงประกอบ">
+              <Field label="ลิงก์เพลง (YouTube, Spotify, SoundCloud, หรือ URL ตรง)">
+                <input
+                  {...register("customData.bgMusicUrl")}
+                  className={input}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="เริ่มเล่นที่วินาทีที่ (YouTube)">
+                  <input type="number" {...register("customData.musicStart")} className={input} placeholder="0" min="0" />
+                </Field>
+                <Field label="หยุดที่วินาทีที่ (0 = เล่นจนจบ)">
+                  <input type="number" {...register("customData.musicEnd")} className={input} placeholder="0" min="0" />
+                </Field>
+              </div>
+            </Section>
+
+            {/* ── Section 5: แกลเลอรี่ ── */}
+            <Section title="📸 แกลเลอรี่รูปภาพ">
+              <div className="grid grid-cols-3 gap-3">
+                {gallery.map((url, idx) => (
+                  <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border border-gray-200">
+                    <Image src={url} alt={`gallery-${idx}`} fill className="object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setValue("customData.gallery", gallery.filter((_, i) => i !== idx), { shouldDirty: true })}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                ))}
+                <label className={`border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-pink-400 transition aspect-square text-gray-400 text-sm ${uploadingField === 'gallery' ? 'opacity-50' : ''}`}>
+                  {uploadingField === 'gallery' ? '⏳' : '+ เพิ่มรูป'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploadingField === 'gallery'}
+                    onChange={async (e) => {
+                      if (!e.target.files?.[0]) return
+                      setUploadingField('gallery')
+                      await handleUpload(e.target.files[0], (url) => {
+                        setValue("customData.gallery", [...gallery, url], { shouldDirty: true })
+                      })
+                      setUploadingField(null)
+                    }}
+                  />
+                </label>
+              </div>
+            </Section>
+
+            {/* ── Section 6: Quiz ── */}
+            <QuizSection
+              uploadingField={uploadingField}
+              setUploadingField={setUploadingField}
+              handleUpload={handleUpload}
+            />
+
+          </div>
+        </form>
+      </div>
+    </FormProvider>
   )
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.error?.message || "Upload failed")
-  return data.secure_url
 }
 
-const CATEGORIES = [
-  { id: 'valentine', label: 'วาเลนไทน์ 🌹', color: '#ec4899' },
-  { id: 'birthday', label: 'วันเกิด 🎂', color: '#f59e0b' },
-  { id: 'anniversary', label: 'วันครบรอบ 💍', color: '#8b5cf6' },
-  { id: 'apology', label: 'ขอโทษ 🥺', color: '#3b82f6' },
-]
+// --- QuizSection uses useFormContext to avoid prop-passing type issues ---
+function QuizSection({
+  uploadingField,
+  setUploadingField,
+  handleUpload,
+}: {
+  uploadingField: string | null
+  setUploadingField: (v: string | null) => void
+  handleUpload: (file: File, onSuccess: (url: string) => void) => Promise<void>
+}) {
+  const { control, register, watch, setValue } = useFormContext<FormValues>()
+  const { fields, append, remove } = useFieldArray({ control, name: "customData.quizzes" })
 
-interface QuizItem {
-  id: string;
-  type: 'text' | 'date' | 'choice';
-  question: string;
-  answer: string;
-  options: string[];
-  explanationImage?: string; 
-  explanationText?: string; 
-}
-
-export default function EditorForm({ project, updateProjectAction }: { project: any, updateProjectAction: any }) {
-  // --- State ---
-  const [imageUrl, setImageUrl] = useState(project.customData?.imageUrl || "") 
-  const [title, setTitle] = useState(project.customData?.title || "")
-  const [message, setMessage] = useState(project.customData?.message || "")
-  const [selectedCategory, setSelectedCategory] = useState(project.templateId || 'valentine')
-  const [anniversaryDate, setAnniversaryDate] = useState(project.customData?.anniversaryDate || "")
-  const [useTypingEffect, setUseTypingEffect] = useState(project.customData?.useTypingEffect || false)
-  const [themeColor, setThemeColor] = useState(project.customData?.themeColor || "#ec4899")
-  const [bgMusicUrl, setBgMusicUrl] = useState(project.customData?.bgMusicUrl || "")
-  const [fontStyle, setFontStyle] = useState(project.customData?.fontStyle || "font-sans")
-  const [musicStart, setMusicStart] = useState(project.customData?.musicStart || "0")
-  const [musicEnd, setMusicEnd] = useState(project.customData?.musicEnd || "")
-  const [gallery, setGallery] = useState<string[]>(project.customData?.gallery || [])
-  const [quizzes, setQuizzes] = useState<QuizItem[]>(project.customData?.quizzes || [])
-
-  // Cropper & Upload State
-  const [tempImage, setTempImage] = useState<string | null>(null)
-  const [isCropping, setIsCropping] = useState(false)
-  const [croppingTarget, setCroppingTarget] = useState<'main' | 'quiz'>('main')
-  const [currentQuizIndexForCrop, setCurrentQuizIndexForCrop] = useState<number | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
-  const [copySuccess, setCopySuccess] = useState(false) // สถานะการ Copy Link
-
-  const [isPending, startTransition] = useTransition()
-
-  const daysTogether = anniversaryDate 
-    ? Math.floor((new Date().getTime() - new Date(anniversaryDate).getTime()) / (1000 * 3600 * 24)) 
-    : 0
-
-  // --- Quiz Handlers ---
   const addQuiz = () => {
-    setQuizzes([...quizzes, { 
-      id: Date.now().toString(), 
-      type: 'text', 
-      question: '', 
-      answer: '', 
+    append({
+      id: Date.now().toString(),
+      type: 'text',
+      question: '',
+      answer: '',
       options: ['', '', '', ''],
       explanationImage: '',
-      explanationText: ''
-    }])
-  }
-
-  const removeQuiz = (index: number) => {
-    setQuizzes(quizzes.filter((_, i) => i !== index))
-  }
-
-  const updateQuiz = (index: number, field: keyof QuizItem, value: any) => {
-    const newQuizzes = [...quizzes]
-    newQuizzes[index] = { ...newQuizzes[index], [field]: value }
-    setQuizzes(newQuizzes)
-  }
-
-  const updateQuizOption = (quizIndex: number, optionIndex: number, value: string) => {
-    const newQuizzes = [...quizzes]
-    const newOptions = [...newQuizzes[quizIndex].options]
-    newOptions[optionIndex] = value
-    newQuizzes[quizIndex].options = newOptions
-    if (newQuizzes[quizIndex].answer === quizzes[quizIndex].options[optionIndex]) {
-      newQuizzes[quizIndex].answer = value
-    }
-    setQuizzes(newQuizzes)
-  }
-
-  // --- Image Handlers ---
-  const handleMainImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const base64 = await fileToBase64(file);
-      setTempImage(base64);
-      setCroppingTarget('main');
-      setIsCropping(true);
-    }
-  }
-
-  const handleQuizImageChange = async (e: ChangeEvent<HTMLInputElement>, index: number) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const base64 = await fileToBase64(file);
-      setTempImage(base64);
-      setCroppingTarget('quiz');
-      setCurrentQuizIndexForCrop(index);
-      setIsCropping(true);
-    }
-  }
-
-  // รองรับทั้ง Blob และ String
-  const handleCropComplete = async (arg1: any, arg2?: any) => {
-    setIsCropping(false)
-    setIsUploading(true)
-    
-    let blob: Blob | null = null;
-    if (arg1 instanceof Blob) blob = arg1;
-    else if (arg2 instanceof Blob) blob = arg2;
-
-    if (!blob) {
-       setIsUploading(false)
-       setTempImage(null)
-       alert("เกิดข้อผิดพลาด: ไม่สามารถประมวลผลรูปภาพได้ (Invalid Blob)")
-       return
-    }
-
-    try {
-      const newUrl = await uploadToCloudinary(blob)
-      if (croppingTarget === 'main') {
-        setImageUrl(newUrl)
-      } else if (croppingTarget === 'quiz' && currentQuizIndexForCrop !== null) {
-        updateQuiz(currentQuizIndexForCrop, 'explanationImage', newUrl)
-      }
-    } catch (error) {
-      alert(`อัปโหลดรูปไม่สำเร็จ: ${(error as Error).message}`)
-    } finally {
-      setIsUploading(false)
-      setTempImage(null)
-      setCurrentQuizIndexForCrop(null)
-    }
-  }
-
-  const handleAddGalleryImage = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setIsUploading(true)
-      try {
-        const newUrl = await uploadToCloudinary(file)
-        setGallery(prev => [...prev, newUrl])
-      } catch (error) {
-        alert(`อัปโหลดรูป Gallery ไม่สำเร็จ: ${(error as Error).message}`)
-      } finally {
-        setIsUploading(false)
-      }
-    }
-  }
-
-  const handleRemoveGalleryImage = (index: number) => {
-    setGallery(prev => prev.filter((_, i) => i !== index))
-  }
-
-  const handleSelectCategory = (catId: string, color: string) => {
-    setSelectedCategory(catId)
-    setThemeColor(color)
-  }
-  
-  // --- Copy Link Handler ---
-  const handleCopyLink = () => {
-    const link = `${window.location.origin}/p/${project.slug}`;
-    navigator.clipboard.writeText(link).then(() => {
-      setCopySuccess(true);
-      setTimeout(() => setCopySuccess(false), 2000);
-    });
-  }
-
-  const handleSubmit = (formData: FormData) => {
-    formData.append('gallery', JSON.stringify(gallery))
-    formData.append('quizzes', JSON.stringify(quizzes))
-    formData.set('imageUrl', imageUrl || "")
-    if(useTypingEffect) formData.set('useTypingEffect', 'on')
-    formData.set('themeColor', themeColor) 
-
-    startTransition(async () => {
-      try {
-        await updateProjectAction(formData)
-        alert("✅ บันทึกข้อมูลเรียบร้อยแล้วครับ!")
-      } catch (error) {
-        console.error("Save Error:", error)
-        alert("❌ เกิดข้อผิดพลาดในการบันทึก")
-      }
+      explanationText: '',
     })
   }
 
   return (
-    <div className={`flex flex-col md:flex-row min-h-screen ${fontStyle}`}>
-      
-      {isCropping && tempImage && (
-        <ImageCropper 
-          imageSrc={tempImage}
-          onCropComplete={handleCropComplete}
-          onCancel={() => { setIsCropping(false); setTempImage(null); }}
-        />
-      )}
+    <Section title="🤔 Quiz / Mini-game">
+      <p className="text-sm text-gray-500 mb-4">ตั้งคำถามให้คนรับต้องตอบก่อนดูเซอร์ไพรส์ (จะกี่ข้อก็ได้)</p>
 
-      {/* --- Sidebar Editor --- */}
-      <aside className="w-full md:w-1/3 bg-white border-r border-gray-200 p-6 overflow-y-auto h-screen shadow-lg z-10 font-sans">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-          ✏️ แก้ไขข้อมูล
-          <span className="text-xs text-white px-2 py-1 rounded-full" style={{ backgroundColor: themeColor }}>
-            {project.name}
-          </span>
-        </h2>
+      {fields.map((field, index) => {
+        const quizType = watch(`customData.quizzes.${index}.type`)
+        const explanationImage = watch(`customData.quizzes.${index}.explanationImage`) ?? ""
 
-        <form action={handleSubmit} className="space-y-6 pb-20">
-          <input type="hidden" name="projectId" value={project.id} />
+        return (
+          <div key={field.id} className="border border-gray-200 rounded-xl p-4 space-y-3 mb-4 relative">
+            <button type="button" onClick={() => remove(index)}
+              className="absolute top-3 right-3 text-gray-300 hover:text-red-400 transition text-lg leading-none">✕</button>
+            <p className="font-semibold text-gray-600 text-sm">คำถามข้อที่ {index + 1}</p>
 
-          {/* Theme Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">เลือกหมวดหมู่ (Theme)</label>
-            <div className="grid grid-cols-2 gap-3">
-              {CATEGORIES.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => handleSelectCategory(cat.id, cat.color)}
-                  className={`py-3 px-2 rounded-xl border-2 transition text-sm font-bold flex items-center justify-center gap-2
-                    ${selectedCategory === cat.id 
-                      ? 'border-transparent text-white shadow-md transform scale-105' 
-                      : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-gray-50'
-                    }
-                  `}
-                  style={{ backgroundColor: selectedCategory === cat.id ? cat.color : undefined }}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* วันครบรอบ */}
-          <div className="bg-pink-50 p-4 rounded-xl border border-pink-100">
-            <label className="block text-sm font-bold text-pink-700 mb-2">📅 วันสำคัญ (เช่น วันครบรอบ)</label>
-            <input
-              name="anniversaryDate"
-              type="date"
-              value={anniversaryDate}
-              onChange={(e) => setAnniversaryDate(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-pink-200 focus:ring-2 focus:ring-pink-400 outline-none text-black bg-white"
-            />
-            {anniversaryDate && (
-               <p className="text-xs text-pink-600 mt-2 font-medium">❤️ คบกันมาแล้ว {daysTogether} วัน</p>
-            )}
-          </div>
-
-          {/* Cover Image */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">รูปภาพหลัก (Cover)</label>
-            
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:bg-gray-50 transition cursor-pointer relative">
-              <input 
-                type="file" 
-                accept="image/*" 
-                onChange={handleMainImageChange}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              />
-              <div className="text-gray-500 font-medium">📸 คลิกเพื่อเลือกรูปภาพ</div>
-            </div>
-            
-            {isUploading && croppingTarget === 'main' && <p className="text-sm text-blue-500 animate-pulse">✂️ กำลังอัปโหลด...</p>}
-            
-            {imageUrl && (
-              <div className="relative w-24 h-24 mt-2 rounded-lg overflow-hidden border-2 border-gray-100 shadow-sm group">
-                <img src={imageUrl} alt="Cover" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><p className="text-white text-xs">รูปปัจจุบัน</p></div>
-              </div>
-            )}
-          </div>
-
-          {/* Content */}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">หัวข้อ</label>
-              <input name="title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 outline-none text-black" style={{ '--tw-ring-color': themeColor } as React.CSSProperties} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">ข้อความในใจ</label>
-              <textarea name="message" rows={4} value={message} onChange={(e) => setMessage(e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 outline-none text-black" style={{ '--tw-ring-color': themeColor } as React.CSSProperties} />
-            </div>
-            <div className="flex items-center gap-2">
-              <input type="checkbox" checked={useTypingEffect} onChange={(e) => setUseTypingEffect(e.target.checked)} className="w-5 h-5 rounded border-gray-300 text-pink-500" />
-              <label className="text-sm text-gray-700 font-medium">เปิดเอฟเฟกต์พิมพ์ข้อความ</label>
-            </div>
-          </div>
-
-          {/* --- Multi-Quiz Editor --- */}
-          <div className="border-t border-dashed pt-6 mt-6">
-            <h3 className="font-bold mb-4 flex items-center justify-between" style={{ color: themeColor }}>
-              <span className="flex items-center gap-2">🎮 เกมตอบคำถาม ({quizzes.length})</span>
-              <button type="button" onClick={addQuiz} className="text-xs bg-gray-100 px-3 py-1.5 rounded-lg border hover:bg-gray-200 text-black">
-                + เพิ่มข้อ
-              </button>
-            </h3>
-            
-            <div className="space-y-6">
-              {quizzes.map((quiz, idx) => (
-                <div key={quiz.id} className="bg-gray-50 p-4 rounded-xl border border-gray-200 relative group">
-                  <button type="button" onClick={() => removeQuiz(idx)} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 text-lg">×</button>
-                  <span className="text-xs font-bold text-gray-400 mb-2 block">ข้อที่ {idx + 1}</span>
-                  
-                  {/* Question Type */}
-                  <div className="flex gap-2 mb-3">
-                    {['text', 'date', 'choice'].map(type => (
-                      <button 
-                        key={type} 
-                        type="button"
-                        onClick={() => updateQuiz(idx, 'type', type)}
-                        className={`flex-1 text-xs py-1.5 rounded border ${quiz.type === type ? 'bg-white shadow-sm border-gray-300 font-bold' : 'text-gray-500 border-transparent hover:bg-gray-100'}`}
-                      >
-                        {type === 'text' ? 'พิมพ์ตอบ' : type === 'date' ? 'วันที่' : 'ตัวเลือก'}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Question Input */}
-                  <input
-                    type="text"
-                    placeholder="ตั้งคำถาม..."
-                    value={quiz.question}
-                    onChange={(e) => updateQuiz(idx, 'question', e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm mb-3 outline-none focus:border-pink-400 text-black"
-                  />
-
-                  {/* Answer Input */}
-                  {quiz.type === 'choice' ? (
-                    <div className="space-y-2 pl-2 border-l-2 border-gray-200 mb-4">
-                      {quiz.options.map((opt, optIdx) => (
-                        <div key={optIdx} className="flex items-center gap-2">
-                          <input 
-                            type="radio" 
-                            name={`correct-${quiz.id}`}
-                            checked={quiz.answer === opt && opt !== ""}
-                            onChange={() => updateQuiz(idx, 'answer', opt)}
-                            className="w-4 h-4 cursor-pointer"
-                            disabled={!opt}
-                          />
-                          <input
-                            type="text"
-                            placeholder={`ตัวเลือกที่ ${optIdx + 1}`}
-                            value={opt}
-                            onChange={(e) => {
-                              const newQuizzes = [...quizzes]
-                              const newOptions = [...newQuizzes[idx].options]
-                              newOptions[optIdx] = e.target.value
-                              newQuizzes[idx].options = newOptions
-                              if (newQuizzes[idx].answer === quizzes[idx].options[optIdx]) {
-                                newQuizzes[idx].answer = e.target.value
-                              }
-                              setQuizzes(newQuizzes)
-                            }}
-                            className={`flex-1 px-2 py-1.5 rounded border text-xs outline-none text-black ${quiz.answer === opt && opt !== "" ? 'bg-green-50 border-green-200' : 'border-gray-200'}`}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : quiz.type === 'date' ? (
-                    <input
-                      type="date"
-                      value={quiz.answer}
-                      onChange={(e) => updateQuiz(idx, 'answer', e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-green-200 bg-green-50 text-sm text-black outline-none mb-4"
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      placeholder="ใส่คำตอบที่ถูกต้อง..."
-                      value={quiz.answer}
-                      onChange={(e) => updateQuiz(idx, 'answer', e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-green-200 bg-green-50 text-sm text-black outline-none mb-4"
-                    />
+            <div className="grid md:grid-cols-2 gap-3">
+              <Field label="คำถาม">
+                <input {...register(`customData.quizzes.${index}.question`)} className={input} placeholder="ครั้งแรกที่เราเจอกันอยู่ที่ไหน?" />
+              </Field>
+              <Field label="ประเภทคำตอบ">
+                <Controller
+                  control={control}
+                  name={`customData.quizzes.${index}.type`}
+                  render={({ field }) => (
+                    <select value={field.value} onChange={e => field.onChange(e.target.value)} className={input}>
+                      <option value="text">พิมพ์ตอบ (ข้อความ)</option>
+                      <option value="date">เลือกวันที่</option>
+                      <option value="choice">ตัวเลือก (4 ตัว)</option>
+                    </select>
                   )}
-
-                  {/* --- Explanation Section (รางวัลตอนตอบถูก) --- */}
-                  <div className="bg-white p-3 rounded-lg border border-pink-100">
-                    <p className="text-xs font-bold text-pink-500 mb-2">🎁 รางวัลเมื่อตอบถูก (Optional)</p>
-                    <div className="flex items-center gap-3 mb-2">
-                       {quiz.explanationImage ? (
-                         <div className="relative w-12 h-12 rounded border overflow-hidden shrink-0 group">
-                           <img src={quiz.explanationImage} className="w-full h-full object-cover" alt="Reward" />
-                           <button type="button" onClick={() => updateQuiz(idx, 'explanationImage', "")} className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs">ลบ</button>
-                         </div>
-                       ) : (
-                         <div className="w-12 h-12 rounded border-2 border-dashed flex items-center justify-center bg-gray-50 text-gray-400 shrink-0 relative">
-                           {isUploading && croppingTarget === 'quiz' && currentQuizIndexForCrop === idx ? (
-                             <span className="text-xs animate-pulse">...</span>
-                           ) : (
-                             <>
-                               <span className="text-xs">รูป</span>
-                               <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleQuizImageChange(e, idx)} />
-                             </>
-                           )}
-                         </div>
-                       )}
-                       
-                       <input 
-                         type="text"
-                         placeholder="ข้อความหวานๆ (เช่น เก่งมากที่รัก!)"
-                         value={quiz.explanationText || ""}
-                         onChange={(e) => updateQuiz(idx, 'explanationText', e.target.value)}
-                         className="flex-1 px-3 py-2 border rounded text-xs outline-none text-black"
-                       />
-                    </div>
-                  </div>
-
-                </div>
-              ))}
-              
-              {quizzes.length === 0 && (
-                <div className="text-center p-6 border-2 border-dashed rounded-xl text-gray-400 text-sm cursor-pointer hover:bg-gray-50 hover:border-gray-300 transition" onClick={addQuiz}>
-                  + คลิกเพื่อสร้างเกมทายใจ
-                </div>
-              )}
+                />
+              </Field>
+              <Field label="คำตอบที่ถูก">
+                <input {...register(`customData.quizzes.${index}.answer`)} className={input} placeholder="คำตอบที่ถูกต้อง" />
+              </Field>
             </div>
-          </div>
 
-          {/* Photo Gallery */}
-          <div className="border-t border-dashed pt-6 mt-6">
-            <h3 className="font-bold mb-4 flex items-center gap-2" style={{ color: themeColor }}>📸 อัลบั้มรูป</h3>
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              {gallery.map((img, idx) => (
-                <div key={idx} className="relative aspect-square group">
-                  <img src={img} alt="Gallery" className="w-full h-full object-cover rounded-lg border" />
-                  <button type="button" onClick={() => handleRemoveGalleryImage(idx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition shadow-sm z-10">×</button>
-                </div>
-              ))}
-              <div className="aspect-square flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg hover:bg-gray-50 transition relative overflow-hidden">
-                 <input type="file" accept="image/*" onChange={handleAddGalleryImage} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                 <span className="text-2xl text-gray-400">+</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Music */}
-          <div className="border-t border-dashed pt-6 mt-6">
-            <h3 className="font-bold mb-4 flex items-center gap-2" style={{ color: themeColor }}>🎵 เพลงประกอบ</h3>
-            <div className="mb-4">
-              <input name="bgMusicUrl" type="text" placeholder="YouTube / Spotify URL" value={bgMusicUrl} onChange={(e) => setBgMusicUrl(e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 outline-none text-black text-sm" style={{ '--tw-ring-color': themeColor } as React.CSSProperties} />
-            </div>
-            <div className="flex gap-2">
-               <input name="musicStart" type="number" placeholder="เริ่ม (วิ)" value={musicStart} onChange={(e) => setMusicStart(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm text-black" />
-               <input name="musicEnd" type="number" placeholder="จบ (วิ)" value={musicEnd} onChange={(e) => setMusicEnd(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm text-black" />
-            </div>
-            <div className="grid grid-cols-2 gap-4 mt-4">
-               <div>
-                  <label className="text-xs text-gray-500 mb-1 block">สีธีม</label>
-                  <input name="themeColor" type="color" value={themeColor} onChange={(e) => setThemeColor(e.target.value)} className="w-full h-8 p-1 rounded border cursor-pointer" />
-               </div>
-               <div>
-                  <label className="text-xs text-gray-500 mb-1 block">ฟอนต์</label>
-                  <select name="fontStyle" value={fontStyle} onChange={(e) => setFontStyle(e.target.value)} className="w-full h-8 px-2 rounded border text-xs text-black bg-white">
-                    <option value="font-sans">ปกติ</option>
-                    <option value="font-serif">หรูหรา</option>
-                    <option value="font-mono">วินเทจ</option>
-                  </select>
-               </div>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col gap-3 mt-8 pb-10 border-t pt-4">
-            <button 
-                type="button" 
-                onClick={handleCopyLink}
-                className="w-full font-bold py-3 rounded-lg shadow border-2 border-pink-500 text-pink-500 hover:bg-pink-50 transition"
-            >
-                {copySuccess ? "✅ คัดลอกลิงก์แล้ว!" : "🔗 คัดลอกลิงก์ส่งให้แฟน"}
-            </button>
-            
-            <button 
-                type="submit" 
-                disabled={isPending || isUploading}
-                className={`w-full font-bold py-3 rounded-lg shadow-lg transition flex justify-center items-center gap-2 text-white`}
-                style={{ backgroundColor: (isPending || isUploading) ? '#9ca3af' : themeColor }}
-            >
-                {(isPending || isUploading) ? <span className="animate-spin">⏳</span> : '💾 บันทึกข้อมูล'}
-            </button>
-
-            <a href="/dashboard" className="text-gray-400 hover:text-gray-600 text-xs text-center">&larr; กลับไปแดชบอร์ด</a>
-          </div>
-        </form>
-      </aside>
-
-      {/* --- Live Preview --- */}
-      <main className="flex-1 flex items-center justify-center p-8 bg-gray-100 hidden md:flex">
-        <div className="w-[375px] h-[667px] bg-white rounded-3xl shadow-2xl overflow-hidden border-8 border-gray-800 relative">
-          <div className="absolute top-0 w-full h-6 bg-gray-800 flex justify-center z-20"><div className="w-20 h-4 bg-black rounded-b-xl"></div></div>
-          
-          <div className={`h-full overflow-y-auto p-6 flex flex-col items-center text-center pt-16 relative ${fontStyle}`} style={{ background: `linear-gradient(to bottom right, ${themeColor}20, #ffffff)` }}>
-            {anniversaryDate && (
-              <div className="text-white px-4 py-1 rounded-full text-xs font-bold shadow-md mb-4 animate-bounce" style={{ backgroundColor: themeColor }}>
-                คบกันมา {daysTogether} วัน ❤️
+            {quizType === 'choice' && (
+              <div className="grid grid-cols-2 gap-2">
+                {[0, 1, 2, 3].map(i => (
+                  <Field key={i} label={`ตัวเลือกที่ ${i + 1}`}>
+                    <input {...register(`customData.quizzes.${index}.options.${i}`)} className={input} placeholder={`ตัวเลือก ${i + 1}`} />
+                  </Field>
+                ))}
               </div>
             )}
-            {imageUrl ? <img src={imageUrl} alt="Fan" className="w-48 h-48 object-cover rounded-2xl border-4 border-white shadow-xl mb-6" /> : <div className="w-48 h-48 bg-gray-200 rounded-2xl flex items-center justify-center mb-6 text-gray-400 text-4xl">🖼️</div>}
-            
-            <h1 className="text-2xl font-bold mb-2" style={{ color: themeColor }}>{title || "Happy Anniversary"}</h1>
-            <p className="text-gray-600 text-sm leading-relaxed">{message || "ข้อความของคุณ..."}</p>
 
-            {/* Quiz Preview */}
-            {quizzes.length > 0 && (
-              <div className="mt-6 p-4 bg-white/80 rounded-xl border-2 border-dashed w-full text-left relative" style={{ borderColor: themeColor }}>
-                <div className="flex justify-between items-center mb-2">
-                   <p className="text-xs font-bold text-gray-500">🎮 Quiz Preview ({quizzes.length} ข้อ)</p>
-                </div>
-                <p className="text-sm font-bold text-gray-800 mb-2">Q1: {quizzes[0].question || "คำถาม..."}</p>
-                
-                {quizzes[0].type === 'choice' ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {quizzes[0].options.slice(0,2).map((opt, i) => (
-                      <div key={i} className="text-xs px-2 py-1.5 rounded border text-center bg-white border-gray-200 text-gray-500">{opt || `ตัวเลือก ${i+1}`}</div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="w-full h-8 bg-gray-100 rounded border border-gray-200 flex items-center px-3 text-xs text-gray-400">คำตอบ...</div>
-                )}
-
-                {/* Show if explanation is set */}
-                {(quizzes[0].explanationImage || quizzes[0].explanationText) && (
-                   <div className="mt-3 pt-2 border-t border-gray-200 flex items-center gap-2">
-                      <span className="text-xs text-pink-500 font-bold">🎁 มีรางวัล</span>
-                      {quizzes[0].explanationImage && <span className="text-xs bg-gray-100 px-1 rounded">🖼️ รูป</span>}
-                      {quizzes[0].explanationText && <span className="text-xs bg-gray-100 px-1 rounded">📝 ข้อความ</span>}
-                   </div>
-                )}
+            <div className="border-t border-gray-100 pt-3">
+              <p className="text-xs font-medium text-gray-500 mb-2">หน้าเฉลย (แสดงหลังตอบถูก)</p>
+              <div className="grid md:grid-cols-2 gap-3">
+                <Field label="ข้อความเฉลย">
+                  <input {...register(`customData.quizzes.${index}.explanationText`)} className={input} placeholder="เก่งมากเลยที่รัก! 💖" />
+                </Field>
+                <Field label="รูปเฉลย">
+                  <ImageUploader
+                    currentUrl={explanationImage}
+                    fieldKey={`quiz-${index}-img`}
+                    uploadingField={uploadingField}
+                    setUploadingField={setUploadingField}
+                    onUpload={(file) => handleUpload(file, (url) => setValue(`customData.quizzes.${index}.explanationImage`, url, { shouldDirty: true }))}
+                    onRemove={() => setValue(`customData.quizzes.${index}.explanationImage`, "", { shouldDirty: true })}
+                  />
+                </Field>
               </div>
-            )}
+            </div>
           </div>
+        )
+      })}
+
+      <button
+        type="button"
+        onClick={addQuiz}
+        className="w-full py-3 border-2 border-dashed border-pink-300 rounded-xl text-pink-500 hover:border-pink-500 hover:bg-pink-50 transition font-medium text-sm"
+      >
+        + เพิ่มคำถาม
+      </button>
+    </Section>
+  )
+}
+
+// --- Shared sub-components ---
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-pink-50 overflow-hidden">
+      <div className="px-6 py-4 border-b border-pink-50 bg-pink-50/50">
+        <h3 className="font-bold text-gray-700">{title}</h3>
+      </div>
+      <div className="px-6 py-5 space-y-4">{children}</div>
+    </div>
+  )
+}
+
+function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium text-gray-600">{label}</label>
+      {children}
+      {error && <p className="text-red-500 text-xs">{error}</p>}
+    </div>
+  )
+}
+
+function ImageUploader({
+  currentUrl, fieldKey, uploadingField, setUploadingField, onUpload, onRemove
+}: {
+  currentUrl: string
+  fieldKey: string
+  uploadingField: string | null
+  setUploadingField: (v: string | null) => void
+  onUpload: (file: File) => Promise<void>
+  onRemove: () => void
+}) {
+  const isUploading = uploadingField === fieldKey
+  return (
+    <div className="flex items-center gap-4">
+      {currentUrl ? (
+        <div className="relative w-24 h-24 rounded-xl overflow-hidden border border-gray-200 group flex-shrink-0">
+          <Image src={currentUrl} alt="preview" fill className="object-cover" />
+          <button type="button" onClick={onRemove}
+            className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold">
+            ลบ
+          </button>
         </div>
-      </main>
+      ) : (
+        <div className="w-24 h-24 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-300 text-3xl flex-shrink-0">🖼️</div>
+      )}
+      <label className={`px-4 py-2 rounded-lg border text-sm font-medium cursor-pointer transition ${isUploading ? 'bg-gray-100 text-gray-400' : 'bg-white hover:bg-gray-50 text-gray-600 border-gray-200'}`}>
+        {isUploading ? '⏳ กำลังอัปโหลด...' : 'เลือกรูปภาพ'}
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          disabled={isUploading}
+          onChange={async (e) => {
+            if (!e.target.files?.[0]) return
+            setUploadingField(fieldKey)
+            await onUpload(e.target.files[0])
+            setUploadingField(null)
+          }}
+        />
+      </label>
     </div>
   )
 }

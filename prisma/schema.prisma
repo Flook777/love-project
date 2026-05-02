@@ -7,61 +7,43 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ตาราง User (เก็บข้อมูลลูกค้า)
 model User {
   id            String    @id @default(cuid())
   name          String?
   email         String?   @unique
   emailVerified DateTime?
   image         String?
-  accounts      Account[]
-  sessions      Session[]
-  projects      Project[] // โปรเจกต์ที่ลูกค้าสร้าง
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  projects      Project[]
+  sessions      Session[]
 }
 
-// ตาราง Account (สำหรับเก็บข้อมูล Login จาก Line/Google)
 model Account {
-  id                String  @id @default(cuid())
+  id                String  @id
   userId            String
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
 
-// ตาราง Session (สำหรับเก็บสถานะการ Login)
 model Session {
-  id           String   @id @default(cuid())
+  id           String   @id
   sessionToken String   @unique
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-// ตาราง Project (เว็บเซอร์ไพรส์ที่ลูกค้าสร้าง)
-model Project {
-  id          String   @id @default(cuid())
-  name        String   @default("My Surprise")
-  slug        String   @unique // URL ของเว็บ เช่น /p/love-you-3000
-  templateId  String   // ธีมที่เลือก
-  customData  Json?    // ข้อมูลรูปภาพและข้อความที่ลูกค้าแก้ (เก็บเป็น JSON)
-  isPublished Boolean  @default(false)
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 }
 
 model VerificationToken {
@@ -70,4 +52,21 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String   @default("My Surprise")
+  slug        String   @unique
+  templateId  String
+  customData  Json?
+  isPublished Boolean  @default(false)
+  viewCount   Int      @default(0)
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([slug])
 }
