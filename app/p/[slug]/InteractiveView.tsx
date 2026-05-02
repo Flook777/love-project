@@ -262,65 +262,64 @@ export default function InteractiveView({ data }: { data: any }) {
                 backgroundColor: accent,
               }}
             >
-              {/* Envelope body shading */}
-              <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.06)', zIndex: 1 }} />
+              {/* Bottom fold creases */}
+              <svg
+                viewBox="0 0 300 210"
+                preserveAspectRatio="none"
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}
+              >
+                <polygon points="0,210 150,120 300,210" fill="rgba(0,0,0,0.07)" />
+                <polygon points="0,210 0,80 150,120" fill="rgba(255,255,255,0.06)" />
+                <polygon points="300,210 300,80 150,120" fill="rgba(0,0,0,0.04)" />
+              </svg>
 
-              {/* Side fold triangles */}
-              <div style={{
-                position: 'absolute', bottom: 0, left: 0, zIndex: 2,
-                width: 0, height: 0,
-                borderStyle: 'solid',
-                borderWidth: '0 0 105px 150px',
-                borderColor: `transparent transparent rgba(0,0,0,0.1) transparent`,
-              }} />
-              <div style={{
-                position: 'absolute', bottom: 0, right: 0, zIndex: 2,
-                width: 0, height: 0,
-                borderStyle: 'solid',
-                borderWidth: '0 150px 105px 0',
-                borderColor: `transparent rgba(0,0,0,0.1) transparent transparent`,
-              }} />
-
-              {/* Letter card that rises out */}
+              {/* Letter card — hidden below envelope initially, rises on open */}
               <div style={{
                 position: 'absolute',
-                left: '10%', right: '10%',
-                bottom: '6px',
-                height: '72%',
+                left: '8%', right: '8%',
+                top: '8%',
+                height: '82%',
                 background: '#fff',
-                borderRadius: '0.75rem',
+                borderRadius: '0.875rem',
                 zIndex: 3,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-                transform: letterRising ? 'translateY(-58%)' : 'translateY(0)',
-                transition: 'transform 0.75s cubic-bezier(0.34, 1.05, 0.64, 1)',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+                // hidden below envelope initially; rises out when letterRising
+                transform: letterRising ? 'translateY(-45%)' : 'translateY(105%)',
+                transition: 'transform 0.85s cubic-bezier(0.34, 1.1, 0.64, 1)',
               }}>
                 <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c4b0bb', marginBottom: '0.5rem' }}>For You</p>
-                <span style={{ fontSize: '2.5rem' }}>💌</span>
+                <span style={{ fontSize: '2.75rem' }}>💌</span>
                 {letterRising && (
-                  <p style={{ fontSize: '0.65rem', color: accent, marginTop: '0.5rem', animation: 'pulse 1.5s infinite' }}>กำลังเข้าสู่โลกของเรา...</p>
+                  <p style={{ fontSize: '0.65rem', color: accent, marginTop: '0.6rem' }}>กำลังเข้าสู่โลกของเรา...</p>
                 )}
               </div>
 
-              {/* Flap — sits on top, rotates open */}
+              {/* Flap — SOLID rectangle, hides card completely, rotates open on click */}
               <div style={{
                 position: 'absolute', top: 0, left: 0, right: 0,
-                height: '52%',
-                zIndex: 4,
+                height: '54%',
+                // Drop behind card once opening so card appears to rise above
+                zIndex: flapOpen ? 2 : 4,
+                backgroundColor: accent,
+                filter: 'brightness(1.06)',
                 transformOrigin: 'top center',
-                transform: flapOpen ? 'perspective(500px) rotateX(-170deg)' : 'perspective(500px) rotateX(0deg)',
-                transition: 'transform 0.55s cubic-bezier(0.4, 0, 0.2, 1)',
+                transform: flapOpen ? 'perspective(480px) rotateX(-172deg)' : 'perspective(480px) rotateX(0deg)',
+                transition: 'transform 0.52s cubic-bezier(0.4, 0, 0.2, 1)',
               }}>
-                <div style={{
-                  width: '100%',
-                  height: '100%',
-                  clipPath: 'polygon(0 0, 100% 0, 50% 100%)',
-                  backgroundColor: accent,
-                  filter: 'brightness(1.12)',
-                }} />
+                {/* V-fold crease line — purely decorative */}
+                <svg
+                  viewBox="0 0 300 110"
+                  preserveAspectRatio="none"
+                  style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+                >
+                  <polygon points="0,0 300,0 150,110" fill="rgba(0,0,0,0.08)" />
+                  <line x1="0" y1="0" x2="150" y2="110" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
+                  <line x1="300" y1="0" x2="150" y2="110" stroke="rgba(0,0,0,0.1)" strokeWidth="1" />
+                </svg>
               </div>
             </div>
           </button>
